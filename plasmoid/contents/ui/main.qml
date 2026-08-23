@@ -11,8 +11,8 @@ PlasmoidItem {
     id: root
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
     property var episodes: []
-    property string scriptPath: StandardPaths.writableLocation(StandardPaths.HomeLocation)
-                           + "/.local/bin/anime-downloaded.sh"
+    property string scriptPath: "$HOME/.local/bin/anime-downloaded.sh"
+
     property var history: []
 
     function groupedEpisodes() {
