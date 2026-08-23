@@ -1,0 +1,16 @@
+# Local runtime data
+anime-todo.json
+anime-history.json
+anime-mal.log
+
+# MAL authentication
+mal-token.json
+
+# Development backups
+*.backup
+*.backup2
+*.working
+
+# Python
+__pycache__/
+*.pyc

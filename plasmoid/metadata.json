@@ -1,0 +1,13 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Id": "com.kakuna.anime-todo",
+        "Name": "Anime To Watch",
+        "Description": "Persistent checklist for newly downloaded anime episodes",
+        "Version": "1.0",
+        "License": "MIT",
+        "Category": "Utilities",
+        "Icon": "view-media-track"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

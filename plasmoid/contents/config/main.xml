@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+
+    <kcfgfile name=""/>
+
+    <group name="General">
+        <entry name="title" type="String">
+            <default>New Episodes</default>
+        </entry>
+
+	<entry name="emptyTitle" type="String">
+ 	   <default>No new episodes</default>
+	</entry>
+
+	<entry name="backgroundOpacity" type="Int">
+   	    <default>80</default>
+	</entry>
+
+        <entry name="showEpisodeCount" type="Bool">
+            <default>true</default>
+        </entry>
+
+        <entry name="refreshInterval" type="Int">
+            <default>3</default>
+        </entry>
+
+	<entry name="titleSize" type="Int">
+    		<default>14</default>
+	</entry>
+
+	<entry name="episodeSize" type="Int">
+   		 <default>12</default>
+	</entry>
+
+	<entry name="itemSpacing" type="Int">
+    		<default>6</default>
+	</entry>
+
+	<entry name="maxEpisodes" type="Int">
+    		<default>20</default>
+	</entry>
+    </group>
+
+</kcfg>
