@@ -18,13 +18,13 @@
    	    <default>80</default>
 	</entry>
 
-        <entry name="showEpisodeCount" type="Bool">
+	<entry name="showEpisodeCount" type="Bool">
             <default>true</default>
-        </entry>
+	</entry>
 
-        <entry name="refreshInterval" type="Int">
+	<entry name="refreshInterval" type="Int">
             <default>3</default>
-        </entry>
+	</entry>
 
 	<entry name="titleSize" type="Int">
     		<default>14</default>
@@ -38,9 +38,12 @@
     		<default>6</default>
 	</entry>
 
-	<entry name="maxEpisodes" type="Int">
-    		<default>20</default>
+	<entry name="confirmUndo" type="Bool">
+			<default>true</default>
 	</entry>
+
+	<entry name="askToGrade" type="Bool">
+			<default>true</default>
     </group>
 
 </kcfg>

@@ -3,28 +3,132 @@
 import json
 import os
 import sys
+import time
 import urllib.parse
 import urllib.request
 import urllib.error
 from datetime import datetime
 
 LOG_FILE = os.path.expanduser("~/.local/share/anime-mal.log")
+LOG_MAX_BYTES = 1_000_000
+LOG_KEEP_LINES = 500
 
+CONFIG = os.path.expanduser("~/.config/anime-todo/mal.conf")
 TOKEN_FILE = os.path.expanduser(
     "~/.config/anime-todo/mal-token.json"
 )
+TOKEN_URL = "https://myanimelist.net/v1/oauth2/token"
+
+# Refresh proactively this many seconds before the token would
+# actually expire, so a slightly-early clock or slow request doesn't
+# still hit a 401.
+REFRESH_MARGIN_SECONDS = 300
 
 
 def log(message):
     timestamp = datetime.now().isoformat(timespec="seconds")
 
+    if (
+        os.path.exists(LOG_FILE)
+        and os.path.getsize(LOG_FILE) > LOG_MAX_BYTES
+    ):
+        try:
+            with open(LOG_FILE, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            with open(LOG_FILE, "w", encoding="utf-8") as f:
+                f.writelines(lines[-LOG_KEEP_LINES:])
+        except Exception:
+            # Trimming is a nice-to-have -- if it fails for any
+            # reason, fall through and still write the log entry
+            # rather than losing it.
+            pass
+
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] {message}\n")
 
 
+def load_client_id():
+    with open(CONFIG, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("CLIENT_ID="):
+                return line.strip().split("=", 1)[1]
+
+    raise RuntimeError("CLIENT_ID not found in mal.conf")
+
+
+def save_tokens(tokens):
+    tokens["obtained_at"] = time.time()
+
+    with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+        json.dump(tokens, f, indent=2)
+        f.write("\n")
+
+    os.chmod(TOKEN_FILE, 0o600)
+
+
+def refresh_tokens(tokens):
+    client_id = load_client_id()
+
+    data = urllib.parse.urlencode({
+        "client_id": client_id,
+        "grant_type": "refresh_token",
+        "refresh_token": tokens["refresh_token"],
+    }).encode()
+
+    request = urllib.request.Request(
+        TOKEN_URL,
+        data=data,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
+        method="POST",
+    )
+
+    with urllib.request.urlopen(request) as response:
+        new_tokens = json.load(response)
+
+    save_tokens(new_tokens)
+    log("Refreshed MAL access token")
+
+    return new_tokens
+
+
 def load_tokens():
     with open(TOKEN_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        tokens = json.load(f)
+
+    obtained_at = tokens.get("obtained_at")
+    expires_in = tokens.get("expires_in")
+
+    if obtained_at and expires_in:
+        expires_at = obtained_at + expires_in
+
+        if time.time() >= expires_at - REFRESH_MARGIN_SECONDS:
+            try:
+                tokens = refresh_tokens(tokens)
+            except Exception as e:
+                log(
+                    "Proactive token refresh failed, will retry "
+                    f"reactively if needed: {e}"
+                )
+
+    return tokens
+
+
+def _send(url, method, headers, data):
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers=headers,
+        method=method
+    )
+
+    with urllib.request.urlopen(request) as response:
+        if response.status == 204:
+            return {}
+
+        return json.load(response)
 
 
 def api_request(url, method="GET", data=None):
@@ -34,27 +138,31 @@ def api_request(url, method="GET", data=None):
         "Authorization": f"Bearer {tokens['access_token']}"
     }
 
+    encoded_data = None
+
     if data is not None:
-        data = urllib.parse.urlencode(data).encode()
+        encoded_data = urllib.parse.urlencode(data).encode()
         headers["Content-Type"] = (
             "application/x-www-form-urlencoded"
         )
 
-    request = urllib.request.Request(
-        url,
-        data=data,
-        headers=headers,
-        method=method
-    )
-
     try:
-        with urllib.request.urlopen(request) as response:
-            if response.status == 204:
-                return {}
-
-            return json.load(response)
+        return _send(url, method, headers, encoded_data)
 
     except urllib.error.HTTPError as e:
+        if e.code == 401:
+            try:
+                tokens = refresh_tokens(tokens)
+            except Exception as refresh_error:
+                log(f"Reactive token refresh failed: {refresh_error}")
+            else:
+                headers["Authorization"] = f"Bearer {tokens['access_token']}"
+
+                try:
+                    return _send(url, method, headers, encoded_data)
+                except urllib.error.HTTPError as retry_error:
+                    e = retry_error
+
         error_body = ""
 
         try:
@@ -255,6 +363,47 @@ def update_watched(mal_id, episode):
     )
 
 
+def mark_finished(mal_id, score=None):
+    data = {
+        "status": "completed"
+    }
+
+    if score is not None:
+        data["score"] = score
+
+    print(
+        f"Marking MAL ID {mal_id} as completed"
+        + (f" with score {score}" if score is not None else "")
+        + "..."
+    )
+
+    url = (
+        f"https://api.myanimelist.net/v2/anime/"
+        f"{mal_id}/my_list_status"
+    )
+
+    result = api_request(
+        url,
+        method="PUT",
+        data=data
+    )
+
+    log(
+        f"Marked MAL ID {mal_id} as completed"
+        + (f" with score {score}" if score is not None else "")
+    )
+
+    print("MAL entry marked as completed.")
+
+    print(
+        json.dumps(
+            result,
+            indent=2,
+            ensure_ascii=False
+        )
+    )
+
+
 def restore_state(mal_id, previous_state):
     print(
         "Restoring MAL ID "
@@ -351,7 +500,8 @@ def print_usage():
         f"Usage:\n"
         f"  {sys.argv[0]} MAL_ID EPISODE\n"
         f"  {sys.argv[0]} --get-status MAL_ID\n"
-        f"  {sys.argv[0]} --restore MAL_ID PREVIOUS_STATE_JSON"
+        f"  {sys.argv[0]} --restore MAL_ID PREVIOUS_STATE_JSON\n"
+        f"  {sys.argv[0]} --finish MAL_ID [SCORE]"
     )
 
 
@@ -380,6 +530,26 @@ if len(sys.argv) >= 2 and sys.argv[1] == "--get-status":
         )
 
         print(f"MAL status check failed: {e}")
+        sys.exit(1)
+
+elif len(sys.argv) >= 2 and sys.argv[1] == "--finish":
+    if len(sys.argv) not in (3, 4):
+        print_usage()
+        sys.exit(1)
+
+    mal_id = int(sys.argv[2])
+    score = int(sys.argv[3]) if len(sys.argv) == 4 else None
+
+    try:
+        mark_finished(mal_id, score)
+
+    except Exception as e:
+        log(
+            f"MAL finish failed for "
+            f"ID {mal_id}: {e}"
+        )
+
+        print(f"MAL finish failed: {e}")
         sys.exit(1)
 
 elif len(sys.argv) >= 2 and sys.argv[1] == "--restore":

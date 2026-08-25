@@ -8,6 +8,9 @@ import time
 import urllib.parse
 import urllib.request
 import webbrowser
+import base64
+import hashlib
+import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 CONFIG = os.path.expanduser("~/.config/anime-todo/mal.conf")
@@ -169,6 +172,7 @@ print("Authorization code received.")
 print("Exchanging code for tokens...")
 
 tokens = exchange_code()
+tokens["obtained_at"] = time.time()
 
 os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
 
