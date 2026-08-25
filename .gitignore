@@ -1,6 +1,12 @@
 # Local runtime data
 anime-todo.json
 anime-history.json
+anime-series-map.json
+anime-pending-matches.json
+anime-pending-grades.json
+anime-batch-warnings.json
+anime-last-removed.json
+anime-todo.lock
 anime-mal.log
 
 # MAL authentication
@@ -10,6 +16,7 @@ mal-token.json
 *.backup
 *.backup2
 *.working
+*.bak
 
 # Python
 __pycache__/
