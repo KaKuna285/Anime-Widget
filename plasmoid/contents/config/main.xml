@@ -6,9 +6,10 @@
     <kcfgfile name=""/>
 
     <group name="General">
-        <entry name="title" type="String">
-            <default>New Episodes</default>
-        </entry>
+
+	<entry name="title" type="String">
+		<default>New Episodes</default>
+	</entry>
 
 	<entry name="emptyTitle" type="String">
  	   <default>No new episodes</default>
@@ -44,6 +45,8 @@
 
 	<entry name="askToGrade" type="Bool">
 			<default>true</default>
+	</entry>
+
     </group>
 
 </kcfg>
