@@ -1,0 +1,4 @@
+1.
+Query-cleanup regex — only lightly tested against real fansub-tagged folder names; best exercised naturally once used for real downloads.
+2.
+Known-title stripping edge case — anime-parse-episode.py's title-masking (used for both absolute-episode-number and kind-marker detection) can be defeated if the download folder name doesn't match the title embedded in the actual release filename. Only surfaced via a test with intentionally mismatched names; real-world risk is low since folder and filename titles are normally consistent.

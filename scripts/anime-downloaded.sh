@@ -1135,6 +1135,70 @@ PY
         ) 200>"$LOCK_FILE"
         ;;
 
+    search-only)
+        QUERY="$2"
+
+        if [ -z "$QUERY" ]; then
+            echo "Usage: $0 search-only QUERY"
+            exit 1
+        fi
+
+        ensure_files
+
+        if [ ! -x "$SCRIPT_DIR/anime-mal-search.py" ]; then
+            echo "anime-mal-search.py not found."
+            exit 1
+        fi
+
+        TEMP_KEY="__search_only_$$_$(date +%s%N)__"
+
+        # Run the search synchronously, WITHOUT holding our own lock --
+        # anime-mal-search.py manages its own locking around the
+        # pending-matches file internally. Holding a lock here too
+        # would deadlock: the search process opens its own fresh file
+        # descriptor on the same lock file and blocks waiting for us,
+        # while we're blocked waiting for it to finish.
+        "$SCRIPT_DIR/anime-mal-search.py" "$TEMP_KEY" "$QUERY" >/dev/null
+
+        if [ $? -ne 0 ]; then
+            echo "Search failed."
+            exit 1
+        fi
+
+        (
+            flock -x 200
+
+            RESULT="$(
+                python3 - "$PENDING" "$TEMP_KEY" <<'PY'
+import json
+import sys
+
+pending_file = sys.argv[1]
+key = sys.argv[2]
+
+with open(pending_file, "r", encoding="utf-8") as f:
+    pending = json.load(f)
+
+entry = pending.pop(key, None)
+
+with open(pending_file, "w", encoding="utf-8") as f:
+    json.dump(pending, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+
+print(json.dumps((entry or {}).get("candidates", []), ensure_ascii=False))
+PY
+            )"
+
+            if [ $? -ne 0 ]; then
+                echo "Failed to read search results:"
+                echo "$RESULT"
+                exit 1
+            fi
+
+            echo "$RESULT"
+        ) 200>"$LOCK_FILE"
+        ;;
+
     *)
         TORRENT_NAME="$1"
         CONTENT_PATH="$2"

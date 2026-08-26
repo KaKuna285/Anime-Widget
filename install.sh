@@ -56,6 +56,7 @@ cp "$SCRIPT_DIR/scripts/anime-mal-search.py" "$BIN_DIR/anime-mal-search.py"
 cp "$SCRIPT_DIR/scripts/anime-parse-episode.py" "$BIN_DIR/anime-parse-episode.py"
 cp "$SCRIPT_DIR/scripts/anime-watch-changes.sh" "$BIN_DIR/anime-watch-changes.sh"
 cp "$SCRIPT_DIR/scripts/anime-mal-details.py" "$BIN_DIR/anime-mal-details.py"
+cp "$SCRIPT_DIR/scripts/anime-rss-helper.py" "$BIN_DIR/anime-rss-helper.py"
 
 chmod +x "$BIN_DIR/anime-downloaded.sh"
 chmod +x "$BIN_DIR/anime-mal-auth.py"
@@ -64,6 +65,21 @@ chmod +x "$BIN_DIR/anime-mal-search.py"
 chmod +x "$BIN_DIR/anime-parse-episode.py"
 chmod +x "$BIN_DIR/anime-watch-changes.sh"
 chmod +x "$BIN_DIR/anime-mal-details.py"
+chmod +x "$BIN_DIR/anime-rss-helper.py"
+
+DESKTOP_DIR="$HOME/.local/share/applications"
+mkdir -p "$DESKTOP_DIR"
+
+cat > "$DESKTOP_DIR/anime-add-series.desktop" << EOF
+[Desktop Entry]
+Type=Application
+Name=Add Anime Series
+Comment=Create a qBittorrent RSS rule and pre-map it to MyAnimeList
+Exec=qml6 "$SCRIPT_DIR/tools/add-series.qml"
+Icon=view-media-track
+Terminal=false
+Categories=Utility;
+EOF
 
 kpackagetool6 --type Plasma/Applet --install "$SCRIPT_DIR/plasmoid" 2>/dev/null ||
 kpackagetool6 --type Plasma/Applet --upgrade "$SCRIPT_DIR/plasmoid"
