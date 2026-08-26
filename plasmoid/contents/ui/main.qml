@@ -29,11 +29,27 @@ PlasmoidItem {
     // title if one exists, otherwise a friendly version of the
     // series key (plain folder name, or "Folder (Movie)" / "Folder
     // Season 2" for a composite multi-group key).
+    function preferredTitle(entry) {
+        if (!entry) {
+            return null
+        }
+
+        if (plasmoid.configuration.preferEnglishTitle && entry.englishTitle) {
+            return entry.englishTitle
+        }
+
+        return entry.title || null
+    }
+
     function groupDisplayLabel(seriesKey) {
         var mapEntry = root.seriesMap[seriesKey]
 
-        if (mapEntry && mapEntry.malId && mapEntry.title) {
-            return mapEntry.title
+        if (mapEntry && mapEntry.malId) {
+            var preferred = root.preferredTitle(mapEntry)
+
+            if (preferred) {
+                return preferred
+            }
         }
 
         return root.seriesKeyLabel(seriesKey)
@@ -206,6 +222,16 @@ PlasmoidItem {
         )
 
         refreshTimer.restart()
+    }
+
+    function openContainingFolder(episode) {
+        var path = episode.path
+        var lastSlash = path.lastIndexOf("/")
+        var dir = lastSlash >= 0 ? path.substring(0, lastSlash) : path
+
+        executable.run(
+            "xdg-open " + JSON.stringify(dir)
+        )
     }
 
     Plasma5Support.DataSource {
@@ -417,6 +443,7 @@ PlasmoidItem {
 
         property string activeSeriesKey: ""
         property string activeGradeSeriesKey: ""
+        property bool awaitingManualSearch: false
 
         function nextPendingSeries() {
             for (var key in root.pendingMatches) {
@@ -429,6 +456,23 @@ PlasmoidItem {
 
         function maybeShowNextPending() {
             if (seriesMatchDialog.visible) {
+                // Only refresh in place if we're specifically
+                // waiting on a manual re-search we just triggered --
+                // not on every unrelated periodic poll, which would
+                // otherwise keep resetting the user's selection.
+                if (!fullRep.awaitingManualSearch) {
+                    return
+                }
+
+                var openEntry = root.pendingMatches[activeSeriesKey]
+
+                if (!openEntry || openEntry.status === "searching") {
+                    return
+                }
+
+                fullRep.awaitingManualSearch = false
+                seriesMatchDialog.candidates = openEntry.candidates || []
+                seriesMatchDialog.selectedId = -1
                 return
             }
 
@@ -602,6 +646,10 @@ PlasmoidItem {
             property var candidates: []
             property int selectedId: -1
 
+            readonly property bool isSearching: root.pendingMatches[fullRep.activeSeriesKey]
+            ? root.pendingMatches[fullRep.activeSeriesKey].status === "searching"
+            : false
+
             onOpened: selectedId = -1
 
             contentItem: ColumnLayout {
@@ -611,6 +659,39 @@ PlasmoidItem {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     text: i18n("Which anime is \"%1\"?", seriesMatchDialog.displayLabel)
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Controls.TextField {
+                        id: manualQueryField
+                        Layout.fillWidth: true
+                        placeholderText: i18n("Or search manually...")
+                        text: seriesMatchDialog.displayLabel
+                        enabled: !seriesMatchDialog.isSearching
+
+                        Keys.onReturnPressed: manualSearchButton.clicked()
+                    }
+
+                    Controls.Button {
+                        id: manualSearchButton
+                        text: seriesMatchDialog.isSearching ? i18n("Searching...") : i18n("Search")
+                        enabled: !seriesMatchDialog.isSearching && manualQueryField.text.length > 0
+
+                        onClicked: {
+                            fullRep.awaitingManualSearch = true
+
+                            executable.run(
+                                root.scriptPath + " remap-series " +
+                                JSON.stringify(fullRep.activeSeriesKey) + " " +
+                                JSON.stringify(manualQueryField.text)
+                            )
+
+                            refreshTimer.restart()
+                        }
+                    }
                 }
 
                 ListView {
@@ -733,7 +814,7 @@ PlasmoidItem {
                                     text: modelData.entry.skipped
                                     ? i18n("Skipped -- not tracked on MAL")
                                     : modelData.entry.malId
-                                    ? i18n("Mapped to \"%1\" (MAL %2)", modelData.entry.title || "?", modelData.entry.malId)
+                                    ? i18n("Mapped to \"%1\" (MAL %2)", root.preferredTitle(modelData.entry) || "?", modelData.entry.malId)
                                     : i18n("Not mapped yet")
                                 }
 
@@ -823,7 +904,7 @@ PlasmoidItem {
                                     text: modelData.entry.skipped
                                     ? i18n("Skipped -- not tracked on MAL")
                                     : modelData.entry.malId
-                                    ? i18n("Mapped to \"%1\" (MAL %2)", modelData.entry.title || "?", modelData.entry.malId)
+                                    ? i18n("Mapped to \"%1\" (MAL %2)", root.preferredTitle(modelData.entry) || "?", modelData.entry.malId)
                                     : i18n("Not mapped yet")
                                 }
 
@@ -1220,6 +1301,11 @@ PlasmoidItem {
 
                         Controls.Menu {
                             id: episodeContextMenu
+
+                            Controls.MenuItem {
+                                text: i18n("Show in folder")
+                                onTriggered: root.openContainingFolder(episodeRow.episode)
+                            }
 
                             Controls.MenuItem {
                                 text: i18n("Remove \"%1\"", root.episodeLabel(episodeRow.episode))

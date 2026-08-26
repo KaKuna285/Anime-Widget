@@ -9,6 +9,7 @@ Kirigami.FormLayout {
     property alias cfg_refreshInterval: refreshSpin.value
     property alias cfg_confirmUndo: confirmUndoCheck.checked
     property alias cfg_askToGrade: askToGradeCheck.checked
+    property alias cfg_preferEnglishTitle: preferEnglishTitleCheck.checked
 
     QQC2.SpinBox {
         id: refreshSpin
@@ -42,5 +43,10 @@ Kirigami.FormLayout {
     QQC2.CheckBox {
         id: askToGradeCheck
         text: i18n("Ask me to rate a show when I finish it")
+    }
+
+    QQC2.CheckBox {
+        id: preferEnglishTitleCheck
+        text: i18n("Prefer English titles over Japanese/romaji")
     }
 }

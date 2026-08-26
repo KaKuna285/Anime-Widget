@@ -19,8 +19,8 @@ def load_client_id():
     raise RuntimeError("CLIENT_ID not found in mal.conf")
 
 
-def get_num_episodes(mal_id, client_id):
-    url = f"{DETAILS_URL}/{mal_id}?fields=num_episodes"
+def get_details(mal_id, client_id):
+    url = f"{DETAILS_URL}/{mal_id}?fields=num_episodes,alternative_titles"
 
     request = urllib.request.Request(
         url,
@@ -30,7 +30,10 @@ def get_num_episodes(mal_id, client_id):
     with urllib.request.urlopen(request) as response:
         data = json.load(response)
 
-    return data.get("num_episodes")
+    num_episodes = data.get("num_episodes")
+    english_title = (data.get("alternative_titles") or {}).get("en")
+
+    return num_episodes, english_title
 
 
 def main():
@@ -42,17 +45,17 @@ def main():
 
     try:
         client_id = load_client_id()
-        num_episodes = get_num_episodes(mal_id, client_id)
+        num_episodes, english_title = get_details(mal_id, client_id)
     except Exception as e:
-        print(f"Failed to fetch episode count: {e}", file=sys.stderr)
+        print(f"Failed to fetch anime details: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # MAL returns 0 for ongoing/unknown-length series -- treat as
-    # "unknown" too, since we can't detect a final episode either way.
-    if not num_episodes:
-        sys.exit(1)
-
-    print(num_episodes)
+    # MAL returns 0 for unknown/ongoing episode counts, and many
+    # anime simply have no English title -- print an empty line for
+    # either rather than failing, so a caller gets whichever field
+    # is actually available.
+    print(num_episodes if num_episodes else "")
+    print(english_title if english_title else "")
 
 
 if __name__ == "__main__":

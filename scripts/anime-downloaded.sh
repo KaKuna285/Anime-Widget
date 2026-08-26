@@ -681,15 +681,22 @@ PY
         ensure_files
 
         NUM_EPISODES=""
+        ENGLISH_TITLE=""
 
         if [ -x "$SCRIPT_DIR/anime-mal-details.py" ]; then
-            NUM_EPISODES="$("$SCRIPT_DIR/anime-mal-details.py" "$MAL_ID" 2>/dev/null)"
+            DETAILS_OUTPUT="$("$SCRIPT_DIR/anime-mal-details.py" "$MAL_ID" 2>/dev/null)"
+
+            if [ -n "$DETAILS_OUTPUT" ]; then
+                mapfile -t DETAILS_LINES <<< "$DETAILS_OUTPUT"
+                NUM_EPISODES="${DETAILS_LINES[0]}"
+                ENGLISH_TITLE="${DETAILS_LINES[1]}"
+            fi
         fi
 
         (
             flock -x 200
 
-            python3 - "$SERIES_MAP" "$PENDING" "$TODO" "$SERIES" "$MAL_ID" "$TITLE" "$NUM_EPISODES" <<'PY'
+            python3 - "$SERIES_MAP" "$PENDING" "$TODO" "$SERIES" "$MAL_ID" "$TITLE" "$NUM_EPISODES" "$ENGLISH_TITLE" <<'PY'
 import json
 import sys
 
@@ -700,6 +707,7 @@ series = sys.argv[4]
 mal_id = int(sys.argv[5])
 title = sys.argv[6] or series
 num_episodes = int(sys.argv[7]) if sys.argv[7] else None
+english_title = sys.argv[8] if len(sys.argv) > 8 and sys.argv[8] else None
 
 with open(map_file, "r", encoding="utf-8") as f:
     series_map = json.load(f)
@@ -707,6 +715,7 @@ with open(map_file, "r", encoding="utf-8") as f:
 series_map[series] = {
     "malId": mal_id,
     "title": title,
+    "englishTitle": english_title,
     "numEpisodes": num_episodes,
     "confirmed": True
 }
