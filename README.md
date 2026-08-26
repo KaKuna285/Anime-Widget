@@ -9,11 +9,12 @@ Point qBittorrent's "run on torrent completion" hook at this project's script, a
 - **Automatic checklist** — new episodes appear in the widget the moment a torrent finishes, grouped by series.
 - **Automatic MAL matching** — the first time a new series shows up, the widget searches MyAnimeList and asks you to confirm which entry it is. It remembers your choice, so every future episode of that series maps correctly with no further input.
 - **Movies, OVAs, and specials** — detected and labeled distinctly from regular episodes (e.g. "Movie", "OVA 2"), each still mapping correctly to its own MAL entry.
-- **Batch torrents** — a torrent containing multiple episodes (a season pack, a full-series batch) is unpacked and every episode queued individually, with one MAL match instead of one per file.
+- **Batch torrents** — a torrent containing multiple episodes (a season pack, a full-series batch) is unpacked and every episode queued individually. If everything in the batch is the same season and kind, it's matched to MAL once; if a batch spans multiple seasons or mixes in movies/OVAs/specials, each distinct group gets its own independent MAL match automatically.
 - **Automatic MAL sync on checkoff** — checking an episode updates your MAL `num_episodes_watched`. When you reach the final episode of an entry, a popup lets you rate it (or skip), and MAL is set to "completed."
 - **Undo** — reverses your most recent action, whether that was completing an episode or removing one from the list. Restores MAL state where relevant.
 - **Remove wrongly-queued entries** — right-click any episode to remove it from the list (e.g. a mis-parsed or duplicate entry).
 - **Resilient by design** — file locking prevents races between concurrent downloads, failures surface as visible error dialogs instead of failing silently, and the MAL OAuth token refreshes itself automatically so you won't need to re-authenticate every month.
+- **- **Real titles, not folder names** — once a series is matched, its entry in the widget shows the actual MAL title instead of the raw download folder name (with an optional setting to prefer the English title over the Japanese/romaji one).
 
 ## Requirements
 
@@ -70,7 +71,7 @@ In qBittorrent: **Tools → Options → Downloads → Run external program on to
 
 **Finishing a show:** when you check off a show's final episode, a "rate it?" popup appears. Give it a score, or skip — either way, MAL gets marked completed.
 
-**Made a mistake?** The undo button (top-right of the widget) reverses your most recent action — whether that was checking off an episode or removing one. Right-click any episode for a "Remove" option if something's wrongly queued (duplicate, mis-parsed episode number, etc.).
+**Made a mistake?** The undo button (top-right of the widget) reverses your most recent action — whether that was checking off an episode or removing one. Right-click any episode for "Show in folder" (opens the file's location) or "Remove" if something's wrongly queued (duplicate, mis-parsed episode number, etc.).
 
 **Managing series matches:** the gear icon opens a list of every series you've matched. Active ones (still have episodes pending) show at the top; finished ones collapse behind a "Show N finished series" toggle so the list doesn't get cluttered. From here you can re-search a series or manually set a MAL ID.
 
@@ -79,12 +80,11 @@ In qBittorrent: **Tools → Options → Downloads → Run external program on to
 Right-click the widget → **Configure**:
 - **General** — title text, whether the compact panel view shows an episode count
 - **Appearance** — font sizes, spacing, background opacity
-- **Behavior** — fallback refresh interval, whether to confirm before undoing, whether to prompt for a rating when finishing a show
+- **Behavior** — fallback refresh interval, whether to confirm before undoing, whether to prompt for a rating when finishing a show, whether to prefer English titles over Japanese/romaji ones
 
 ## Known limitations
 
-- **One folder = one MAL entry.** If a batch torrent spans multiple seasons in a single folder, the widget will warn you (visible as a dialog in the widget) but still map every episode to one MAL ID — split multi-season batches into separate folders for accurate tracking.
-- **Filename parsing is best-effort.** It handles most common release naming conventions (`S01E01`, `1x03`, absolute episode numbers, movie/OVA/special markers), but unusual or heavily abbreviated names may need manual correction via the manage-series dialog.
+- **Filename parsing is best-effort.** It handles most common release naming conventions (`S01E01`, `1x03`, absolute episode numbers, movie/OVA/special markers), but unusual or heavily abbreviated names may need manual correction via the manage-series dialog. Parsing also relies on the release's embedded title roughly matching the download folder name — if they're inconsistent, an episode number or kind marker could occasionally be misread.
 - **MAL's OAuth only supports the "plain" PKCE method**, not the more modern S256 — this is a limitation on MAL's end, not something this project can fix.
 
 ## Where things live
