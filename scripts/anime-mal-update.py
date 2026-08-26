@@ -146,57 +146,61 @@ def api_request(url, method="GET", data=None):
             "application/x-www-form-urlencoded"
         )
 
-    try:
-        return _send(url, method, headers, encoded_data)
+    max_attempts = 3
+    attempts = 0
 
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            try:
-                tokens = refresh_tokens(tokens)
-            except Exception as refresh_error:
-                log(f"Reactive token refresh failed: {refresh_error}")
-            else:
-                headers["Authorization"] = f"Bearer {tokens['access_token']}"
-
-                try:
-                    return _send(url, method, headers, encoded_data)
-                except urllib.error.HTTPError as retry_error:
-                    e = retry_error
-
-        error_body = ""
+    while True:
+        attempts += 1
 
         try:
-            error_body = e.read().decode(
-                "utf-8",
-                errors="replace"
-            )
-        except Exception:
-            pass
+            return _send(url, method, headers, encoded_data)
 
-        raise RuntimeError(
-            f"MAL API error: HTTP {e.code} {error_body}"
-        ) from e
+        except urllib.error.HTTPError as e:
+            if e.code == 401 and attempts < max_attempts:
+                try:
+                    tokens = refresh_tokens(tokens)
+                except Exception as refresh_error:
+                    log(f"Reactive token refresh failed: {refresh_error}")
+                else:
+                    headers["Authorization"] = f"Bearer {tokens['access_token']}"
+                    continue
+
+            if e.code == 429 and attempts < max_attempts:
+                retry_after = e.headers.get("Retry-After") if e.headers else None
+
+                try:
+                    wait_seconds = float(retry_after) if retry_after else 2.0
+                except ValueError:
+                    wait_seconds = 2.0
+
+                log(f"MAL rate limit hit (429) -- waiting {wait_seconds}s before retry")
+                time.sleep(wait_seconds)
+                continue
+
+            error_body = ""
+
+            try:
+                error_body = e.read().decode(
+                    "utf-8",
+                    errors="replace"
+                )
+            except Exception:
+                pass
+
+            raise RuntimeError(
+                f"MAL API error: HTTP {e.code} {error_body}"
+            ) from e
 
 
 def get_list_status(mal_id):
     url = (
-        "https://api.myanimelist.net/v2/users/@me/animelist"
-        "?limit=100"
-        "&fields=list_status"
+        f"https://api.myanimelist.net/v2/anime/{mal_id}"
+        "?fields=my_list_status"
     )
 
-    while url:
-        result = api_request(url)
+    result = api_request(url)
 
-        for entry in result.get("data", []):
-            node = entry.get("node", {})
-
-            if node.get("id") == mal_id:
-                return entry.get("list_status")
-
-        url = result.get("paging", {}).get("next")
-
-    return None
+    return result.get("my_list_status")
 
 
 def get_previous_state(mal_id):
