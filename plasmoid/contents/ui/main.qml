@@ -20,43 +20,88 @@ PlasmoidItem {
     property var seriesMap: ({})
     property var pendingGrades: ({})
     property var lastRemoved: ({})
+    property var batchWarnings: ({})
     property string errorSource: ""
     property string errorMessage: ""
     property string lastShownError: ""
 
+    // Resolves the display label for a group: the confirmed MAL
+    // title if one exists, otherwise a friendly version of the
+    // series key (plain folder name, or "Folder (Movie)" / "Folder
+    // Season 2" for a composite multi-group key).
+    function groupDisplayLabel(seriesKey) {
+        var mapEntry = root.seriesMap[seriesKey]
+
+        if (mapEntry && mapEntry.malId && mapEntry.title) {
+            return mapEntry.title
+        }
+
+        return root.seriesKeyLabel(seriesKey)
+    }
+
     function groupedEpisodes() {
         var groups = {}
+        var kindPriority = { episode: 0, special: 1, ova: 2, movie: 3 }
 
         for (var i = 0; i < root.episodes.length; i++) {
             var episode = root.episodes[i]
-            var series = episode.series
+            var key = episode.seriesKey || episode.series
 
-            if (!groups[series]) {
-                groups[series] = []
+            if (!groups[key]) {
+                groups[key] = []
             }
 
-            groups[series].push(episode)
+            groups[key].push(episode)
         }
 
         var result = []
 
-        for (var series in groups) {
-            groups[series].sort(function(a, b) {
-                if (a.season !== b.season) {
-                    return a.season - b.season
-                }
+        for (var key in groups) {
+            var groupEpisodes = groups[key]
 
-                return a.episode - b.episode
+            // Count how many items share each kind within this
+            // group, so a Movie/OVA/Special label can tell "the
+            // only one" from "one of several" instead of just
+            // checking its own episode number in isolation.
+            var kindCounts = {}
+
+            for (var j = 0; j < groupEpisodes.length; j++) {
+                var epKind = groupEpisodes[j].kind || "episode"
+                kindCounts[epKind] = (kindCounts[epKind] || 0) + 1
+            }
+
+            for (var j = 0; j < groupEpisodes.length; j++) {
+                var epKind = groupEpisodes[j].kind || "episode"
+                groupEpisodes[j].kindCount = kindCounts[epKind]
+            }
+
+            groupEpisodes.sort(function(a, b) {
+                var aKind = kindPriority[a.kind || "episode"]
+                var bKind = kindPriority[b.kind || "episode"]
+
+                if (aKind === undefined) aKind = 99
+                    if (bKind === undefined) bKind = 99
+
+                        if (aKind !== bKind) {
+                            return aKind - bKind
+                        }
+
+                        if (a.season !== b.season) {
+                            return a.season - b.season
+                        }
+
+                        return a.episode - b.episode
             })
 
             result.push({
-                series: series,
-                episodes: groups[series]
+                seriesKey: key,
+                label: root.groupDisplayLabel(key),
+                        episodes: groupEpisodes
             })
         }
 
         result.sort(function(a, b) {
-            return a.series.localeCompare(b.series)
+            return a.label.localeCompare(b.label)
         })
         return result
     }
@@ -75,37 +120,67 @@ PlasmoidItem {
         return arr
     }
 
+    // Derives a human-readable label from a MAL-matching identity
+    // key. Plain folder-name keys are returned as-is; composite keys
+    // from multi-group batches ("<folder>::<kind>S<season>") are
+    // turned into something like "Show Season 2" or "Show (OVA)".
+    function seriesKeyLabel(key) {
+        var parts = key.split("::")
+
+        if (parts.length !== 2) {
+            return key
+        }
+
+        var match = parts[1].match(/^(episode|movie|ova|special)S(\d+)$/)
+
+        if (!match) {
+            return key
+        }
+
+        var kind = match[1]
+        var season = parseInt(match[2])
+
+        if (kind === "episode") {
+            return parts[0] + " Season " + season
+        }
+
+        var kindLabel = kind === "ova" ? "OVA" : (kind.charAt(0).toUpperCase() + kind.slice(1))
+
+        return parts[0] + " (" + kindLabel + ")"
+    }
+
     function activeSeriesMapList() {
         return root.seriesMapList().filter(function(x) {
-            return root.episodes.some(function(e) { return e.series === x.key })
+            return root.episodes.some(function(e) { return (e.seriesKey || e.series) === x.key })
         })
     }
 
     function inactiveSeriesMapList() {
         return root.seriesMapList().filter(function(x) {
-            return !root.episodes.some(function(e) { return e.series === x.key })
+            return !root.episodes.some(function(e) { return (e.seriesKey || e.series) === x.key })
         })
     }
 
     function episodeLabel(episode) {
         var kind = episode.kind || "episode"
 
-        if (kind === "movie") {
-            return episode.episode > 1 ? i18n("Movie %1", episode.episode) : i18n("Movie")
+        if (kind === "episode") {
+            return i18n("Episode %1", episode.episode)
         }
+
+        var kindLabel
 
         if (kind === "ova") {
-            return episode.episode > 1 ? i18n("OVA %1", episode.episode) : i18n("OVA")
+            kindLabel = "OVA"
+        } else if (kind === "ona") {
+            kindLabel = "ONA"
+        } else {
+            kindLabel = kind.charAt(0).toUpperCase() + kind.slice(1)
         }
 
-        if (kind === "special") {
-            return episode.episode > 1 ? i18n("Special %1", episode.episode) : i18n("Special")
-        }
+        var count = episode.kindCount || 1
 
-        return "S"
-        + ("0" + episode.season).slice(-2)
-        + "E"
-        + ("0" + episode.episode).slice(-2)
+        return count > 1 ? i18n("%1 %2", kindLabel, episode.episode) : kindLabel
     }
 
     function reportError(source, detail) {
@@ -246,6 +321,17 @@ PlasmoidItem {
                     root.lastRemoved = {}
                 }
             }
+
+            if (source === scriptPath + " batch-warnings") {
+                var batchWarningsOutput = data["stdout"] || ""
+
+                try {
+                    root.batchWarnings = JSON.parse(batchWarningsOutput)
+                } catch (error) {
+                    console.log("Failed to parse batch warnings JSON:", error)
+                    root.batchWarnings = {}
+                }
+            }
         }
 
         function run(command) {
@@ -272,6 +358,9 @@ PlasmoidItem {
         executable.run(
             scriptPath + " last-removed"
         )
+        executable.run(
+            scriptPath + " batch-warnings"
+        )
     }
 
     function markDone(episode) {
@@ -279,7 +368,8 @@ PlasmoidItem {
             scriptPath + " done " +
             JSON.stringify(episode.series) + " " +
             episode.season + " " +
-            episode.episode
+            episode.episode + " " +
+            JSON.stringify(episode.kind || "episode")
         )
 
         refreshTimer.restart()
@@ -350,6 +440,7 @@ PlasmoidItem {
 
             activeSeriesKey = key
             seriesMatchDialog.seriesKey = key
+            seriesMatchDialog.displayLabel = root.pendingMatches[key].query || key
             seriesMatchDialog.candidates = root.pendingMatches[key].candidates || []
             seriesMatchDialog.open()
         }
@@ -456,6 +547,10 @@ PlasmoidItem {
             refreshTimer.restart()
         }
 
+        function undoConfirmed() {
+            root.undoLast()
+        }
+
         Connections {
             target: root
             function onPendingMatchesChanged() {
@@ -503,6 +598,7 @@ PlasmoidItem {
             title: i18n("Match series")
 
             property string seriesKey: ""
+            property string displayLabel: ""
             property var candidates: []
             property int selectedId: -1
 
@@ -514,7 +610,7 @@ PlasmoidItem {
                 Controls.Label {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    text: i18n("Which anime is \"%1\"?", seriesMatchDialog.seriesKey)
+                    text: i18n("Which anime is \"%1\"?", seriesMatchDialog.displayLabel)
                 }
 
                 ListView {
@@ -627,7 +723,7 @@ PlasmoidItem {
                                     Layout.fillWidth: true
                                     wrapMode: Text.WordWrap
                                     font.bold: true
-                                    text: modelData.key
+                                    text: root.seriesKeyLabel(modelData.key)
                                 }
 
                                 Controls.Label {
@@ -649,7 +745,7 @@ PlasmoidItem {
                                         id: queryField
                                         Layout.fillWidth: true
                                         placeholderText: i18n("Search MAL as...")
-                                        text: modelData.key
+                                        text: root.seriesKeyLabel(modelData.key)
                                     }
 
                                     Controls.Button {
@@ -717,7 +813,7 @@ PlasmoidItem {
                                     Layout.fillWidth: true
                                     wrapMode: Text.WordWrap
                                     font.bold: true
-                                    text: modelData.key
+                                    text: root.seriesKeyLabel(modelData.key)
                                 }
 
                                 Controls.Label {
@@ -739,7 +835,7 @@ PlasmoidItem {
                                         id: queryFieldFinished
                                         Layout.fillWidth: true
                                         placeholderText: i18n("Search MAL as...")
-                                        text: modelData.key
+                                        text: root.seriesKeyLabel(modelData.key)
                                     }
 
                                     Controls.Button {
@@ -919,7 +1015,7 @@ PlasmoidItem {
                     text: i18n("Undo")
                     Controls.DialogButtonBox.buttonRole: Controls.DialogButtonBox.AcceptRole
                     onClicked: {
-                        root.undoLast()
+                        fullRep.undoConfirmed()
                         undoConfirmDialog.close()
                     }
                 }
@@ -1066,7 +1162,7 @@ PlasmoidItem {
                 property var group: modelData
 
                 Controls.Label {
-                    text: group.series
+                    text: group.label
 
                     font.bold: true
                     font.pixelSize: plasmoid.configuration.episodeSize

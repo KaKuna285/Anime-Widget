@@ -82,48 +82,49 @@ start_series_search() {
     fi
 }
 
-# Parses and queues a single video file from inside a batch torrent.
-# Mirrors the single-episode logic in the default case, but scoped to
-# one file at a time so a batch's files can be looped over under one
-# lock acquisition. Expects SERIES and MAL_ID to already be set by
-# the caller (both are the same for every file in a batch).
+# Produces a short human-readable label for a (kind, season) group,
+# used when a batch spans multiple groups and each needs its own
+# distinct MAL-matching identity.
+group_label() {
+    local series="$1"
+    local kind="$2"
+    local season="$3"
+
+    case "$kind" in
+        movie)
+            echo "$series (Movie)"
+            ;;
+        ova)
+            echo "$series (OVA)"
+            ;;
+        special)
+            echo "$series (Special)"
+            ;;
+        *)
+            echo "$series Season $season"
+            ;;
+    esac
+}
+
+# Queues a single, already-parsed episode/movie/OVA/special from
+# inside a batch torrent under the given MAL-matching identity
+# (SERIES_KEY may be the plain folder name, or a composite
+# "<folder>::<kind>S<season>" key when the batch spans multiple
+# distinct groups). DISPLAY_SERIES is always the plain folder name,
+# used for the TODO entry's "series" field (widget grouping/display)
+# regardless of which identity key was used for MAL matching.
 process_one_episode() {
-    local file_name="$1"
-    local file_path="$2"
-
-    local kind="episode"
-    local season=""
-    local episode=""
-
-    if [ -x "$SCRIPT_DIR/anime-parse-episode.py" ]; then
-        local episode_info
-        episode_info="$("$SCRIPT_DIR/anime-parse-episode.py" "$file_name" "$SERIES" 2>/dev/null)"
-
-        if [ -n "$episode_info" ]; then
-            local episode_lines
-            mapfile -t episode_lines <<< "$episode_info"
-            kind="${episode_lines[0]}"
-            season="${episode_lines[1]}"
-            episode="${episode_lines[2]}"
-        fi
-    else
-        local episode_code
-        episode_code="$(printf '%s' "$file_name" | grep -oEi 'S[0-9]{1,2}E[0-9]{1,4}' | head -1 | tr '[:lower:]' '[:upper:]')"
-
-        if [ -n "$episode_code" ]; then
-            season="$(printf '%s' "$episode_code" | grep -oEi '^S[0-9]+' | grep -oE '[0-9]+')"
-            episode="$(printf '%s' "$episode_code" | grep -oEi 'E[0-9]+' | grep -oE '[0-9]+')"
-        fi
-    fi
-
-    if [ -z "$episode" ]; then
-        echo "Warning: could not parse episode number from '$file_name' -- skipped."
-        return
-    fi
+    local series_key="$1"
+    local display_series="$2"
+    local group_label_text="$3"
+    local kind="$4"
+    local season="$5"
+    local episode="$6"
+    local file_path="$7"
 
     local needs_search
     needs_search="$(
-        python3 - "$SERIES_MAP" "$PENDING" "$TODO" "$SERIES" "$kind" "$season" "$episode" "$file_path" "$MAL_ID" "$PENDING_TIMEOUT_SECONDS" <<'PY'
+        python3 - "$SERIES_MAP" "$PENDING" "$TODO" "$series_key" "$display_series" "$kind" "$season" "$episode" "$file_path" "$MAL_ID" "$PENDING_TIMEOUT_SECONDS" <<'PY'
 import json
 import sys
 import time
@@ -131,18 +132,19 @@ import time
 series_map_file = sys.argv[1]
 pending_file = sys.argv[2]
 todo_file = sys.argv[3]
-series = sys.argv[4]
-kind = sys.argv[5]
-season = int(sys.argv[6])
-episode = int(sys.argv[7])
-path = sys.argv[8]
-explicit_mal_id = int(sys.argv[9]) if sys.argv[9] else None
-pending_timeout = int(sys.argv[10])
+series_key = sys.argv[4]
+display_series = sys.argv[5]
+kind = sys.argv[6]
+season = int(sys.argv[7])
+episode = int(sys.argv[8])
+path = sys.argv[9]
+explicit_mal_id = int(sys.argv[10]) if sys.argv[10] else None
+pending_timeout = int(sys.argv[11])
 
 with open(series_map_file, "r", encoding="utf-8") as f:
     series_map = json.load(f)
 
-entry = series_map.get(series)
+entry = series_map.get(series_key)
 
 mal_id = explicit_mal_id
 needs_search = False
@@ -156,7 +158,7 @@ if mal_id is None:
         with open(pending_file, "r", encoding="utf-8") as f:
             pending = json.load(f)
 
-        pending_entry = pending.get(series)
+        pending_entry = pending.get(series_key)
 
         if pending_entry is None:
             needs_search = True
@@ -178,7 +180,8 @@ with open(todo_file, "r", encoding="utf-8") as f:
     todo = json.load(f)
 
 item = {
-    "series": series,
+    "series": display_series,
+    "seriesKey": series_key,
     "kind": kind,
     "season": season,
     "episode": episode,
@@ -188,7 +191,7 @@ item = {
 }
 
 if not any(
-    x.get("series") == series
+    x.get("seriesKey", x.get("series")) == series_key
     and x.get("kind", "episode") == kind
     and x.get("season") == season
     and x.get("episode") == episode
@@ -205,16 +208,21 @@ PY
     )"
 
     if [ $? -ne 0 ]; then
-        echo "Failed to queue '$file_name':"
+        echo "Failed to queue episode for '$series_key':"
         echo "$needs_search"
         return
     fi
 
     if [ "$needs_search" = "yes" ]; then
-        start_series_search "$SERIES"
-    fi
+        mark_pending "$series_key" "$group_label_text"
 
-    echo "$season"
+        if [ -x "$SCRIPT_DIR/anime-mal-search.py" ]; then
+            "$SCRIPT_DIR/anime-mal-search.py" "$series_key" "$group_label_text" >/dev/null 2>&1 200>&- &
+            disown
+        else
+            echo "anime-mal-search.py not found -- '$series_key' queued, will stay unmatched until it exists."
+        fi
+    fi
 }
 
 case "$1" in
@@ -239,9 +247,10 @@ case "$1" in
         SERIES="$2"
         SEASON="$3"
         EPISODE="$4"
+        KIND="${5:-episode}"
 
         if [ -z "$SERIES" ] || [ -z "$SEASON" ] || [ -z "$EPISODE" ]; then
-            echo "Usage: $0 done SERIES SEASON EPISODE"
+            echo "Usage: $0 done SERIES SEASON EPISODE [KIND]"
             exit 1
         fi
 
@@ -252,7 +261,7 @@ case "$1" in
 
             # Find the episode and its MAL ID.
             MAL_ID="$(
-                python3 - "$TODO" "$SERIES" "$SEASON" "$EPISODE" <<'PY'
+                python3 - "$TODO" "$SERIES" "$SEASON" "$EPISODE" "$KIND" <<'PY'
 import json
 import sys
 
@@ -260,6 +269,7 @@ todo_file = sys.argv[1]
 series = sys.argv[2]
 season = int(sys.argv[3])
 episode = int(sys.argv[4])
+kind = sys.argv[5]
 
 with open(todo_file, "r", encoding="utf-8") as f:
     todo = json.load(f)
@@ -269,6 +279,7 @@ for item in todo:
         item.get("series") == series
         and item.get("season") == season
         and item.get("episode") == episode
+        and item.get("kind", "episode") == kind
     ):
         mal_id = item.get("malId")
         if mal_id:
@@ -317,7 +328,7 @@ PY
             # MAL succeeded (or there's no malId to sync) -- now move
             # the episode from TODO to history.
             RESULT_INFO="$(
-                python3 - "$TODO" "$HISTORY" "$SERIES" "$SEASON" "$EPISODE" "$MAL_PREVIOUS" "$SERIES_MAP" <<'PY'
+                python3 - "$TODO" "$HISTORY" "$SERIES" "$SEASON" "$EPISODE" "$MAL_PREVIOUS" "$SERIES_MAP" "$KIND" <<'PY'
 import json
 import sys
 from datetime import datetime
@@ -329,6 +340,7 @@ season = int(sys.argv[4])
 episode_number = int(sys.argv[5])
 mal_previous = json.loads(sys.argv[6])
 series_map_file = sys.argv[7]
+kind = sys.argv[8]
 
 with open(todo_file, "r", encoding="utf-8") as f:
     todo = json.load(f)
@@ -344,6 +356,7 @@ for episode in todo:
         episode.get("series") == series
         and episode.get("season") == season
         and episode.get("episode") == episode_number
+        and episode.get("kind", "episode") == kind
     ):
         completed = episode
     else:
@@ -358,6 +371,7 @@ if completed is not None:
         x.get("series") == series
         and x.get("season") == season
         and x.get("episode") == episode_number
+        and x.get("kind", "episode") == kind
         for x in history
     )
 
@@ -623,6 +637,7 @@ already_in_todo = any(
     x.get("series") == episode.get("series")
     and x.get("season") == episode.get("season")
     and x.get("episode") == episode.get("episode")
+    and x.get("kind", "episode") == episode.get("kind", "episode")
     for x in todo
 )
 
@@ -716,7 +731,10 @@ with open(todo_file, "r", encoding="utf-8") as f:
 changed = False
 
 for item in todo:
-    if item.get("series") == series and item.get("malId") != mal_id:
+    if (
+        item.get("seriesKey", item.get("series")) == series
+        and item.get("malId") != mal_id
+    ):
         item["malId"] = mal_id
         changed = True
 
@@ -809,7 +827,10 @@ PY
         fi
 
         if [ -z "$QUERY" ]; then
-            QUERY="$SERIES"
+            # Strip a "::kindSNN" group suffix (from multi-group
+            # batches) so the default search query is clean, not the
+            # raw internal identity key.
+            QUERY="${SERIES%%::*}"
         fi
 
         ensure_files
@@ -1123,20 +1144,40 @@ PY
 
                 echo "Processing batch: '$TORRENT_NAME'..."
 
-                FOUND_ANY=0
-                SEASONS_SEEN=""
+                declare -a BATCH_FILES=()
+                declare -a BATCH_KINDS=()
+                declare -a BATCH_SEASONS=()
+                declare -a BATCH_EPISODES=()
+                declare -A GROUPS_SEEN=()
 
                 while IFS= read -r -d '' file; do
-                    FOUND_ANY=1
+                    FILE_NAME="$(basename "$file")"
 
-                    FILE_SEASON="$(process_one_episode "$(basename "$file")" "$file")"
+                    FILE_KIND="episode"
+                    FILE_SEASON=""
+                    FILE_EPISODE=""
 
-                    if [ -n "$FILE_SEASON" ]; then
-                        case " $SEASONS_SEEN " in
-                            *" $FILE_SEASON "*) ;;
-                            *) SEASONS_SEEN="$SEASONS_SEEN $FILE_SEASON" ;;
-                        esac
+                    if [ -x "$SCRIPT_DIR/anime-parse-episode.py" ]; then
+                        EPISODE_INFO="$("$SCRIPT_DIR/anime-parse-episode.py" "$FILE_NAME" "$SERIES" 2>/dev/null)"
+
+                        if [ -n "$EPISODE_INFO" ]; then
+                            mapfile -t EPISODE_LINES <<< "$EPISODE_INFO"
+                            FILE_KIND="${EPISODE_LINES[0]}"
+                            FILE_SEASON="${EPISODE_LINES[1]}"
+                            FILE_EPISODE="${EPISODE_LINES[2]}"
+                        fi
                     fi
+
+                    if [ -z "$FILE_EPISODE" ]; then
+                        echo "Warning: could not parse episode number from '$FILE_NAME' -- skipped."
+                        continue
+                    fi
+
+                    BATCH_FILES+=("$file")
+                    BATCH_KINDS+=("$FILE_KIND")
+                    BATCH_SEASONS+=("$FILE_SEASON")
+                    BATCH_EPISODES+=("$FILE_EPISODE")
+                    GROUPS_SEEN["${FILE_KIND}S${FILE_SEASON}"]=1
                 done < <(
                     find "$CONTENT_PATH" -type f \
                         \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.avi' \
@@ -1144,56 +1185,39 @@ PY
                         -print0 | sort -z
                 )
 
-                if [ "$FOUND_ANY" -eq 0 ]; then
+                FILE_COUNT="${#BATCH_FILES[@]}"
+                GROUP_COUNT="${#GROUPS_SEEN[@]}"
+
+                if [ "$FILE_COUNT" -eq 0 ]; then
                     echo "No video files found in batch '$TORRENT_NAME'."
                 fi
 
-                SEASON_COUNT="$(printf '%s\n' $SEASONS_SEEN | sort -u | wc -l)"
+                for i in "${!BATCH_FILES[@]}"; do
+                    FILE="${BATCH_FILES[$i]}"
+                    FILE_KIND="${BATCH_KINDS[$i]}"
+                    FILE_SEASON="${BATCH_SEASONS[$i]}"
+                    FILE_EPISODE="${BATCH_EPISODES[$i]}"
 
-                if [ "$SEASON_COUNT" -gt 1 ]; then
-                    SEASONS_LIST="$(printf '%s\n' $SEASONS_SEEN | sort -u | tr '\n' ',' | sed 's/,$//')"
-
-                    echo "Warning: batch '$TORRENT_NAME' spans multiple seasons ($SEASONS_LIST) but this folder maps to a single MAL entry."
-                    echo "All files were queued under the same MAL ID -- episodes from seasons other than the primary one will be tracked inaccurately on MAL."
-                    echo "To fix this properly, split this batch into separate per-season folders/RSS rules, same as you already do for OVAs."
-
-                    python3 - "$BATCH_WARNINGS" "$TORRENT_NAME" "$SERIES" "$SEASONS_LIST" <<'PY'
-import json
-import sys
-import time
-
-warnings_file = sys.argv[1]
-torrent_name = sys.argv[2]
-series = sys.argv[3]
-seasons_list = sys.argv[4]
-
-try:
-    with open(warnings_file, "r", encoding="utf-8") as f:
-        warnings = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    warnings = {}
-
-key = f"{torrent_name}::{int(time.time())}"
-
-warnings[key] = {
-    "series": series,
-    "message": (
-        f"Batch \"{torrent_name}\" spans multiple seasons ({seasons_list}) "
-        f"but \"{series}\" maps to a single MAL entry. All files were queued "
-        f"under the same MAL ID -- episodes from seasons other than the "
-        f"primary one will be tracked inaccurately on MAL. Split this batch "
-        f"into separate per-season folders/RSS rules to fix properly."
-    )
-}
-
-with open(warnings_file, "w", encoding="utf-8") as f:
-    json.dump(warnings, f, ensure_ascii=False, indent=2)
-    f.write("\n")
-PY
-
-                    if [ $? -ne 0 ]; then
-                        echo "Failed to record batch warning for the widget -- see console output above instead."
+                    if [ "$GROUP_COUNT" -le 1 ]; then
+                        SERIES_KEY="$SERIES"
+                        GROUP_LABEL_TEXT="$SERIES"
+                    else
+                        SERIES_KEY="${SERIES}::${FILE_KIND}S${FILE_SEASON}"
+                        GROUP_LABEL_TEXT="$(group_label "$SERIES" "$FILE_KIND" "$FILE_SEASON")"
                     fi
+
+                    process_one_episode \
+                        "$SERIES_KEY" "$SERIES" "$GROUP_LABEL_TEXT" \
+                        "$FILE_KIND" "$FILE_SEASON" "$FILE_EPISODE" "$FILE"
+                done
+
+                if [ "$GROUP_COUNT" -gt 1 ]; then
+                    GROUP_LIST=""
+                    for group_key in "${!GROUPS_SEEN[@]}"; do
+                        GROUP_LIST="$GROUP_LIST $group_key"
+                    done
+
+                    echo "Batch '$TORRENT_NAME' contains $GROUP_COUNT distinct groups ($GROUP_LIST) -- each is being matched to MAL independently."
                 fi
             ) 200>"$LOCK_FILE"
 
@@ -1296,6 +1320,7 @@ with open(todo_file, "r", encoding="utf-8") as f:
 
 item = {
     "series": series,
+    "seriesKey": series,
     "kind": kind,
     "season": season,
     "episode": episode,
@@ -1305,7 +1330,7 @@ item = {
 }
 
 if not any(
-    x.get("series") == series
+    x.get("seriesKey", x.get("series")) == series
     and x.get("kind", "episode") == kind
     and x.get("season") == season
     and x.get("episode") == episode

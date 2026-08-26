@@ -31,6 +31,11 @@ import sys
 def extract_title_numbers(title):
     return set(re.findall(r"(?<!\d)\d{1,4}(?!\d)", title))
 
+def strip_known_title(name, known_name):
+    if not known_name:
+        return name
+
+    return re.sub(re.escape(known_name), " ", name, flags=re.I)
 
 def mask_title_numbers(name, title_numbers):
     if not title_numbers:
@@ -94,8 +99,10 @@ def try_patterns(name, known_name=""):
     # 4. Movie / OVA / OAD / Special marker, with an optional part
     #    number ("Movie 2", "OVA2", "SP01"). Checked before the
     #    generic absolute-number patterns since an explicit keyword
-    #    is more specific than a bare number.
-    kind_result = try_kind_marker(name)
+    #    is more specific than a bare number. The known series name
+    #    is stripped first so a title that itself contains a marker
+    #    word can't be mistaken for the marker.
+    kind_result = try_kind_marker(strip_known_title(name, known_name))
     if kind_result:
         return kind_result
 
