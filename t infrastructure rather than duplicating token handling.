@@ -1,0 +1,228 @@
+[1mdiff --git a/scripts/anime-mal-update.py b/scripts/anime-mal-update.py[m
+[1mindex 31af93b..976989c 100755[m
+[1m--- a/scripts/anime-mal-update.py[m
+[1m+++ b/scripts/anime-mal-update.py[m
+[36m@@ -93,6 +93,33 @@[m [mdef refresh_tokens(tokens):[m
+ [m
+     return new_tokens[m
+ [m
+[32m+[m[32mdef list_status(status):[m
+[32m+[m[32m    url = ([m
+[32m+[m[32m        "https://api.myanimelist.net/v2/users/@me/animelist"[m
+[32m+[m[32m        f"?status={status}"[m
+[32m+[m[32m        "&fields=alternative_titles,media_type,start_season,main_picture"[m
+[32m+[m[32m        "&limit=100"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    results = [][m
+[32m+[m
+[32m+[m[32m    while url:[m
+[32m+[m[32m        result = api_request(url)[m
+[32m+[m
+[32m+[m[32m        for entry in result.get("data", []):[m
+[32m+[m[32m            node = entry.get("node", {})[m
+[32m+[m
+[32m+[m[32m            results.append({[m
+[32m+[m[32m                "id": node.get("id"),[m
+[32m+[m[32m                "title": node.get("title"),[m
+[32m+[m[32m                "mediaType": node.get("media_type"),[m
+[32m+[m[32m                "startYear": (node.get("start_season") or {}).get("year"),[m
+[32m+[m[32m                "picture": (node.get("main_picture") or {}).get("medium"),[m
+[32m+[m[32m            })[m
+[32m+[m
+[32m+[m[32m        url = result.get("paging", {}).get("next")[m
+[32m+[m
+[32m+[m[32m    print(json.dumps(results, ensure_ascii=False))[m
+ [m
+ def load_tokens():[m
+     with open(TOKEN_FILE, "r", encoding="utf-8") as f:[m
+[36m@@ -505,7 +532,9 @@[m [mdef print_usage():[m
+         f"  {sys.argv[0]} MAL_ID EPISODE\n"[m
+         f"  {sys.argv[0]} --get-status MAL_ID\n"[m
+         f"  {sys.argv[0]} --restore MAL_ID PREVIOUS_STATE_JSON\n"[m
+[31m-        f"  {sys.argv[0]} --finish MAL_ID [SCORE]"[m
+[32m+[m[32m        f"  {sys.argv[0]} --finish MAL_ID [SCORE]\n"[m
+[32m+[m[32m        f"  {sys.argv[0]} --list STATUS "[m
+[32m+[m[32m        f"(plan_to_watch|watching|completed|on_hold|dropped)"[m
+     )[m
+ [m
+ [m
+[36m@@ -556,6 +585,18 @@[m [melif len(sys.argv) >= 2 and sys.argv[1] == "--finish":[m
+         print(f"MAL finish failed: {e}")[m
+         sys.exit(1)[m
+ [m
+[32m+[m[32melif len(sys.argv) >= 2 and sys.argv[1] == "--list":[m
+[32m+[m[32m    if len(sys.argv) != 3:[m
+[32m+[m[32m        print_usage()[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        list_status(sys.argv[2])[m
+[32m+[m[32m    except Exception as e:[m
+[32m+[m[32m        log(f"MAL list fetch failed for status '{sys.argv[2]}': {e}")[m
+[32m+[m[32m        print(f"MAL list fetch failed: {e}")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+ elif len(sys.argv) >= 2 and sys.argv[1] == "--restore":[m
+     if len(sys.argv) != 4:[m
+         print_usage()[m
+[1mdiff --git a/tools/add-series.qml b/tools/add-series.qml[m
+[1mindex 80b7504..d64a660 100644[m
+[1m--- a/tools/add-series.qml[m
+[1m+++ b/tools/add-series.qml[m
+[36m@@ -19,16 +19,20 @@[m [mKirigami.ApplicationWindow {[m
+ [m
+     title: i18n("Add Anime Series")[m
+     width: Kirigami.Units.gridUnit * 32[m
+[31m-    height: Kirigami.Units.gridUnit * 28[m
+[32m+[m[32m    height: Kirigami.Units.gridUnit * 30[m
+ [m
+     property string scriptPath: "$HOME/.local/bin/anime-downloaded.sh"[m
+     property string rssHelperPath: "$HOME/.local/bin/anime-rss-helper.py"[m
+[32m+[m[32m    property string malUpdatePath: "$HOME/.local/bin/anime-mal-update.py"[m
+[32m+[m
+[32m+[m[32m    property string mode: "search"[m
+ [m
+     property var candidates: [][m
+     property int selectedId: -1[m
+     property string selectedTitle: ""[m
+     property var feeds: [][m
+     property bool searching: false[m
+[32m+[m[32m    property bool loadingPlanToWatch: false[m
+     property bool creating: false[m
+     property bool checking: false[m
+     property string statusMessage: ""[m
+[36m@@ -51,6 +55,22 @@[m [mKirigami.ApplicationWindow {[m
+         window.matchExampleTitle = ""[m
+     }[m
+ [m
+[32m+[m[32m    function selectCandidate(candidate) {[m
+[32m+[m[32m        window.selectedId = candidate.id[m
+[32m+[m[32m        window.selectedTitle = candidate.title[m
+[32m+[m[32m        seriesNameField.text = candidate.title[m
+[32m+[m[32m        window.invalidateMatchCheck()[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    function switchMode(newMode) {[m
+[32m+[m[32m        window.mode = newMode[m
+[32m+[m[32m        window.candidates = [][m
+[32m+[m[32m        window.selectedId = -1[m
+[32m+[m[32m        window.selectedTitle = ""[m
+[32m+[m[32m        window.statusMessage = ""[m
+[32m+[m[32m        window.invalidateMatchCheck()[m
+[32m+[m[32m    }[m
+[32m+[m
+     function proceedWithCreate() {[m
+         window.creating = true[m
+         window.statusMessage = i18n("Creating RSS rule...")[m
+[36m@@ -97,6 +117,28 @@[m [mKirigami.ApplicationWindow {[m
+                 return[m
+             }[m
+ [m
+[32m+[m[32m            if (source.indexOf("--list") !== -1) {[m
+[32m+[m[32m                window.loadingPlanToWatch = false[m
+[32m+[m
+[32m+[m[32m                if (exitCode !== 0) {[m
+[32m+[m[32m                    window.statusMessage = i18n("Could not load Plan to Watch: %1", stderr || stdout)[m
+[32m+[m[32m                    window.candidates = [][m
+[32m+[m[32m                    return[m
+[32m+[m[32m                }[m
+[32m+[m
+[32m+[m[32m                try {[m
+[32m+[m[32m                    window.candidates = JSON.parse(stdout)[m
+[32m+[m[32m                    window.statusMessage = window.candidates.length > 0[m
+[32m+[m[32m                    ? i18n("Loaded %1 series from Plan to Watch.", window.candidates.length)[m
+[32m+[m[32m                    : i18n("Your Plan to Watch list is empty.")[m
+[32m+[m[32m                } catch (e) {[m
+[32m+[m[32m                    window.statusMessage = i18n("Failed to parse Plan to Watch list.")[m
+[32m+[m[32m                    window.candidates = [][m
+[32m+[m[32m                }[m
+[32m+[m
+[32m+[m[32m                return[m
+[32m+[m[32m            }[m
+[32m+[m
+             if (source.indexOf("list-feeds") !== -1) {[m
+                 if (exitCode !== 0) {[m
+                     window.statusMessage = i18n("Could not load RSS feeds: %1", stderr || stdout)[m
+[36m@@ -235,9 +277,31 @@[m [mKirigami.ApplicationWindow {[m
+             width: parent.width[m
+             spacing: Kirigami.Units.largeSpacing[m
+ [m
+[32m+[m[32m            RowLayout {[m
+[32m+[m[32m                Layout.fillWidth: true[m
+[32m+[m[32m                spacing: 0[m
+[32m+[m
+[32m+[m[32m                Controls.Button {[m
+[32m+[m[32m                    Layout.fillWidth: true[m
+[32m+[m[32m                    text: i18n("Search MAL")[m
+[32m+[m[32m                    checkable: true[m
+[32m+[m[32m                    checked: window.mode === "search"[m
+[32m+[m[32m                    onClicked: window.switchMode("search")[m
+[32m+[m[32m                }[m
+[32m+[m
+[32m+[m[32m                Controls.Button {[m
+[32m+[m[32m                    Layout.fillWidth: true[m
+[32m+[m[32m                    text: i18n("From Plan to Watch")[m
+[32m+[m[32m                    checkable: true[m
+[32m+[m[32m                    checked: window.mode === "planToWatch"[m
+[32m+[m[32m                    onClicked: window.switchMode("planToWatch")[m
+[32m+[m[32m                }[m
+[32m+[m[32m            }[m
+[32m+[m
+             RowLayout {[m
+                 Layout.fillWidth: true[m
+                 spacing: Kirigami.Units.smallSpacing[m
+[32m+[m[32m                visible: window.mode === "search"[m
+ [m
+                 Controls.TextField {[m
+                     id: seriesNameField[m
+[36m@@ -246,7 +310,6 @@[m [mKirigami.ApplicationWindow {[m
+ [m
+                     onTextChanged: {[m
+                         savePathField.text = "$HOME/Downloads/anime/" + seriesNameField.text[m
+[31m-                        window.invalidateMatchCheck()[m
+                     }[m
+                 }[m
+ [m
+[36m@@ -268,6 +331,28 @@[m [mKirigami.ApplicationWindow {[m
+                 }[m
+             }[m
+ [m
+[32m+[m[32m            RowLayout {[m
+[32m+[m[32m                Layout.fillWidth: true[m
+[32m+[m[32m                visible: window.mode === "planToWatch"[m
+[32m+[m
+[32m+[m[32m                Controls.Button {[m
+[32m+[m[32m                    Layout.fillWidth: true[m
+[32m+[m[32m                    text: window.loadingPlanToWatch ? i18n("Loading...") : i18n("Load Plan to Watch")[m
+[32m+[m[32m                    enabled: !window.loadingPlanToWatch[m
+[32m+[m
+[32m+[m[32m                    onClicked: {[m
+[32m+[m[32m                        window.loadingPlanToWatch = true[m
+[32m+[m[32m                        window.statusMessage = ""[m
+[32m+[m[32m                        window.selectedId = -1[m
+[32m+[m[32m                        window.invalidateMatchCheck()[m
+[32m+[m
+[32m+[m[32m                        executable.run([m
+[32m+[m[32m                            window.malUpdatePath + " --list plan_to_watch"[m
+[32m+[m[32m                        )[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                }[m
+[32m+[m[32m            }[m
+[32m+[m
+             Controls.Label {[m
+                 Layout.fillWidth: true[m
+                 wrapMode: Text.WordWrap[m
+[36m@@ -286,11 +371,7 @@[m [mKirigami.ApplicationWindow {[m
+                     width: ListView.view.width[m
+                     highlighted: window.selectedId === modelData.id[m
+ [m
+[31m-                    onClicked: {[m
+[31m-                        window.selectedId = modelData.id[m
+[31m-                        window.selectedTitle = modelData.title[m
+[31m-                        window.invalidateMatchCheck()[m
+[31m-                    }[m
+[32m+[m[32m                    onClicked: window.selectCandidate(modelData)[m
+ [m
+                     contentItem: RowLayout {[m
+                         spacing: Kirigami.Units.smallSpacing[m

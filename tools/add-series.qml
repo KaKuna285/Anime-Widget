@@ -19,16 +19,20 @@ Kirigami.ApplicationWindow {
 
     title: i18n("Add Anime Series")
     width: Kirigami.Units.gridUnit * 32
-    height: Kirigami.Units.gridUnit * 28
+    height: Kirigami.Units.gridUnit * 30
 
     property string scriptPath: "$HOME/.local/bin/anime-downloaded.sh"
     property string rssHelperPath: "$HOME/.local/bin/anime-rss-helper.py"
+    property string malUpdatePath: "$HOME/.local/bin/anime-mal-update.py"
+
+    property string mode: "search"
 
     property var candidates: []
     property int selectedId: -1
     property string selectedTitle: ""
     property var feeds: []
     property bool searching: false
+    property bool loadingPlanToWatch: false
     property bool creating: false
     property bool checking: false
     property string statusMessage: ""
@@ -49,6 +53,22 @@ Kirigami.ApplicationWindow {
         window.matchFound = false
         window.matchCount = 0
         window.matchExampleTitle = ""
+    }
+
+    function selectCandidate(candidate) {
+        window.selectedId = candidate.id
+        window.selectedTitle = candidate.title
+        seriesNameField.text = candidate.title
+        window.invalidateMatchCheck()
+    }
+
+    function switchMode(newMode) {
+        window.mode = newMode
+        window.candidates = []
+        window.selectedId = -1
+        window.selectedTitle = ""
+        window.statusMessage = ""
+        window.invalidateMatchCheck()
     }
 
     function proceedWithCreate() {
@@ -91,6 +111,28 @@ Kirigami.ApplicationWindow {
                     : i18n("No results found -- try a different search term.")
                 } catch (e) {
                     window.statusMessage = i18n("Failed to parse search results.")
+                    window.candidates = []
+                }
+
+                return
+            }
+
+            if (source.indexOf("--list") !== -1) {
+                window.loadingPlanToWatch = false
+
+                if (exitCode !== 0) {
+                    window.statusMessage = i18n("Could not load Plan to Watch: %1", stderr || stdout)
+                    window.candidates = []
+                    return
+                }
+
+                try {
+                    window.candidates = JSON.parse(stdout)
+                    window.statusMessage = window.candidates.length > 0
+                    ? i18n("Loaded %1 series from Plan to Watch.", window.candidates.length)
+                    : i18n("Your Plan to Watch list is empty.")
+                } catch (e) {
+                    window.statusMessage = i18n("Failed to parse Plan to Watch list.")
                     window.candidates = []
                 }
 
@@ -237,7 +279,29 @@ Kirigami.ApplicationWindow {
 
             RowLayout {
                 Layout.fillWidth: true
+                spacing: 0
+
+                Controls.Button {
+                    Layout.fillWidth: true
+                    text: i18n("Search MAL")
+                    checkable: true
+                    checked: window.mode === "search"
+                    onClicked: window.switchMode("search")
+                }
+
+                Controls.Button {
+                    Layout.fillWidth: true
+                    text: i18n("From Plan to Watch")
+                    checkable: true
+                    checked: window.mode === "planToWatch"
+                    onClicked: window.switchMode("planToWatch")
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing
+                visible: window.mode === "search"
 
                 Controls.TextField {
                     id: seriesNameField
@@ -246,7 +310,6 @@ Kirigami.ApplicationWindow {
 
                     onTextChanged: {
                         savePathField.text = "$HOME/Downloads/anime/" + seriesNameField.text
-                        window.invalidateMatchCheck()
                     }
                 }
 
@@ -263,6 +326,28 @@ Kirigami.ApplicationWindow {
                         executable.run(
                             window.scriptPath + " search-only " +
                             JSON.stringify(seriesNameField.text)
+                        )
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: window.mode === "planToWatch"
+
+                Controls.Button {
+                    Layout.fillWidth: true
+                    text: window.loadingPlanToWatch ? i18n("Loading...") : i18n("Load Plan to Watch")
+                    enabled: !window.loadingPlanToWatch
+
+                    onClicked: {
+                        window.loadingPlanToWatch = true
+                        window.statusMessage = ""
+                        window.selectedId = -1
+                        window.invalidateMatchCheck()
+
+                        executable.run(
+                            window.malUpdatePath + " --list plan_to_watch"
                         )
                     }
                 }
@@ -286,11 +371,7 @@ Kirigami.ApplicationWindow {
                     width: ListView.view.width
                     highlighted: window.selectedId === modelData.id
 
-                    onClicked: {
-                        window.selectedId = modelData.id
-                        window.selectedTitle = modelData.title
-                        window.invalidateMatchCheck()
-                    }
+                    onClicked: window.selectCandidate(modelData)
 
                     contentItem: RowLayout {
                         spacing: Kirigami.Units.smallSpacing

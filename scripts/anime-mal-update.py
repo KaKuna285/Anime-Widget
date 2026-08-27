@@ -93,6 +93,33 @@ def refresh_tokens(tokens):
 
     return new_tokens
 
+def list_status(status):
+    url = (
+        "https://api.myanimelist.net/v2/users/@me/animelist"
+        f"?status={status}"
+        "&fields=alternative_titles,media_type,start_season,main_picture"
+        "&limit=100"
+    )
+
+    results = []
+
+    while url:
+        result = api_request(url)
+
+        for entry in result.get("data", []):
+            node = entry.get("node", {})
+
+            results.append({
+                "id": node.get("id"),
+                "title": node.get("title"),
+                "mediaType": node.get("media_type"),
+                "startYear": (node.get("start_season") or {}).get("year"),
+                "picture": (node.get("main_picture") or {}).get("medium"),
+            })
+
+        url = result.get("paging", {}).get("next")
+
+    print(json.dumps(results, ensure_ascii=False))
 
 def load_tokens():
     with open(TOKEN_FILE, "r", encoding="utf-8") as f:
@@ -505,7 +532,9 @@ def print_usage():
         f"  {sys.argv[0]} MAL_ID EPISODE\n"
         f"  {sys.argv[0]} --get-status MAL_ID\n"
         f"  {sys.argv[0]} --restore MAL_ID PREVIOUS_STATE_JSON\n"
-        f"  {sys.argv[0]} --finish MAL_ID [SCORE]"
+        f"  {sys.argv[0]} --finish MAL_ID [SCORE]\n"
+        f"  {sys.argv[0]} --list STATUS "
+        f"(plan_to_watch|watching|completed|on_hold|dropped)"
     )
 
 
@@ -554,6 +583,18 @@ elif len(sys.argv) >= 2 and sys.argv[1] == "--finish":
         )
 
         print(f"MAL finish failed: {e}")
+        sys.exit(1)
+
+elif len(sys.argv) >= 2 and sys.argv[1] == "--list":
+    if len(sys.argv) != 3:
+        print_usage()
+        sys.exit(1)
+
+    try:
+        list_status(sys.argv[2])
+    except Exception as e:
+        log(f"MAL list fetch failed for status '{sys.argv[2]}': {e}")
+        print(f"MAL list fetch failed: {e}")
         sys.exit(1)
 
 elif len(sys.argv) >= 2 and sys.argv[1] == "--restore":
