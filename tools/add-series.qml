@@ -53,15 +53,13 @@ Kirigami.ApplicationWindow {
 
     function proceedWithCreate() {
         window.creating = true
-        window.statusMessage = ""
-
-        var seriesKey = window.baseName(savePathField.text)
+        window.statusMessage = i18n("Creating RSS rule...")
 
         executable.run(
-            window.scriptPath + " confirm-series " +
-            JSON.stringify(seriesKey) + " " +
-            window.selectedId + " " +
-            JSON.stringify(window.selectedTitle)
+            rssHelperPath + " create-rule " +
+            JSON.stringify(seriesNameField.text) + " " +
+            JSON.stringify(feedCombo.currentValue) + " " +
+            JSON.stringify(savePathField.text)
         )
     }
 
@@ -148,28 +146,35 @@ Kirigami.ApplicationWindow {
                 return
             }
 
-            if (source.indexOf("confirm-series") !== -1) {
+            if (source.indexOf("create-rule") !== -1) {
                 if (exitCode !== 0) {
                     window.creating = false
-                    window.statusMessage = i18n("Failed to save MAL mapping: %1", stderr || stdout)
+                    window.statusMessage = i18n("Failed to create RSS rule: %1", stderr || stdout)
                     return
                 }
 
+                window.statusMessage = i18n("RSS rule created -- saving MAL mapping...")
+
+                var seriesKey = window.baseName(savePathField.text)
+
                 executable.run(
-                    rssHelperPath + " create-rule " +
-                    JSON.stringify(seriesNameField.text) + " " +
-                    JSON.stringify(feedCombo.currentValue) + " " +
-                    JSON.stringify(savePathField.text)
+                    window.scriptPath + " confirm-series " +
+                    JSON.stringify(seriesKey) + " " +
+                    window.selectedId + " " +
+                    JSON.stringify(window.selectedTitle)
                 )
 
                 return
             }
 
-            if (source.indexOf("create-rule") !== -1) {
+            if (source.indexOf("confirm-series") !== -1) {
                 window.creating = false
 
                 if (exitCode !== 0) {
-                    window.statusMessage = i18n("Failed to create RSS rule: %1", stderr || stdout)
+                    window.statusMessage = i18n(
+                        "RSS rule created successfully, but saving the MAL mapping failed (%1). This isn't a big problem -- the widget will still automatically detect this series and prompt you to match it once the first episode downloads.",
+                                                stderr || stdout
+                    )
                     return
                 }
 
