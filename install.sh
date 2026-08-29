@@ -77,7 +77,7 @@ cat > "$DESKTOP_DIR/anime-add-series.desktop" << EOF
 Type=Application
 Name=Add Anime Series
 Comment=Create a qBittorrent RSS rule and pre-map it to MyAnimeList
-Exec=qml6 "$SCRIPT_DIR/tools/add-series.qml"
+Exec=env QT_QUICK_CONTROLS_STYLE=org.kde.desktop qml6 "$SCRIPT_DIR/tools/add-series.qml"
 Icon=view-media-track
 Terminal=false
 Categories=Utility;
