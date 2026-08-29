@@ -1,9 +1,11 @@
 #!/bin/bash
-
 set -e
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$HOME/.local/bin"
+
 echo "Installing Anime-Widget"
+
 mkdir -p "$BIN_DIR"
 
 check_inotify_tools() {
@@ -47,7 +49,34 @@ check_inotify_tools() {
     fi
 }
 
+choose_install_mode() {
+    # Default to "both" if stdin isn't a real terminal (e.g. the
+    # script is being piped/run non-interactively), so install.sh
+    # never hangs waiting for input it can't get.
+    if [ ! -t 0 ]; then
+        INSTALL_MODE="both"
+        return
+    fi
+
+    echo ""
+    echo "How would you like to run Anime-Widget?"
+    echo "  1) Plasma panel widget only"
+    echo "  2) Standalone application only"
+    echo "  3) Both (default)"
+    echo ""
+
+    read -p "Choice [1/2/3]: " -r MODE_CHOICE
+    echo ""
+
+    case "$MODE_CHOICE" in
+        1) INSTALL_MODE="widget" ;;
+        2) INSTALL_MODE="standalone" ;;
+        *) INSTALL_MODE="both" ;;
+    esac
+}
+
 check_inotify_tools
+choose_install_mode
 
 cp "$SCRIPT_DIR/scripts/anime-downloaded.sh" "$BIN_DIR/anime-downloaded.sh"
 cp "$SCRIPT_DIR/scripts/anime-mal-auth.py" "$BIN_DIR/anime-mal-auth.py"
@@ -58,9 +87,6 @@ cp "$SCRIPT_DIR/scripts/anime-watch-changes.sh" "$BIN_DIR/anime-watch-changes.sh
 cp "$SCRIPT_DIR/scripts/anime-mal-details.py" "$BIN_DIR/anime-mal-details.py"
 cp "$SCRIPT_DIR/scripts/anime-rss-helper.py" "$BIN_DIR/anime-rss-helper.py"
 cp "$SCRIPT_DIR/scripts/anime-gui-prefs.sh" "$BIN_DIR/anime-gui-prefs.sh"
-mkdir -p "$SCRIPT_DIR/standalone"
-cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeBackend.qml" "$SCRIPT_DIR/standalone/AnimeBackend.qml"
-cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeContent.qml" "$SCRIPT_DIR/standalone/AnimeContent.qml"
 
 chmod +x "$BIN_DIR/anime-downloaded.sh"
 chmod +x "$BIN_DIR/anime-mal-auth.py"
@@ -86,7 +112,30 @@ Terminal=false
 Categories=Utility;
 EOF
 
-kpackagetool6 --type Plasma/Applet --install "$SCRIPT_DIR/plasmoid" 2>/dev/null ||
-kpackagetool6 --type Plasma/Applet --upgrade "$SCRIPT_DIR/plasmoid"
+if [ "$INSTALL_MODE" = "widget" ] || [ "$INSTALL_MODE" = "both" ]; then
+    echo "Installing Plasma widget..."
+
+    kpackagetool6 --type Plasma/Applet --install "$SCRIPT_DIR/plasmoid" 2>/dev/null ||
+    kpackagetool6 --type Plasma/Applet --upgrade "$SCRIPT_DIR/plasmoid"
+fi
+
+if [ "$INSTALL_MODE" = "standalone" ] || [ "$INSTALL_MODE" = "both" ]; then
+    echo "Setting up standalone application..."
+
+    mkdir -p "$SCRIPT_DIR/standalone"
+    cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeBackend.qml" "$SCRIPT_DIR/standalone/AnimeBackend.qml"
+    cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeContent.qml" "$SCRIPT_DIR/standalone/AnimeContent.qml"
+
+    cat > "$DESKTOP_DIR/anime-widget-standalone.desktop" << EOF
+[Desktop Entry]
+Type=Application
+Name=Anime-Widget
+Comment=Track downloaded anime episodes and sync progress to MyAnimeList
+Exec=env QT_QUICK_CONTROLS_STYLE=org.kde.desktop qml6 "$SCRIPT_DIR/standalone/main.qml"
+Icon=view-media-track
+Terminal=false
+Categories=Utility;AudioVideo;
+EOF
+fi
 
 echo "Installation complete."
