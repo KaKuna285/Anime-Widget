@@ -38,6 +38,18 @@ Item {
 
     function maybeShowNextPending() {
         if (seriesMatchDialog.visible) {
+            // If the entry we're showing got resolved elsewhere --
+            // confirmed or skipped in another running instance, e.g.
+            // the widget vs. the standalone app -- it will have
+            // disappeared from pendingMatches entirely. Close our
+            // now-stale dialog instead of leaving it stuck open.
+            if (content.activeSeriesKey !== "" && !(content.activeSeriesKey in content.backend.pendingMatches)) {
+                seriesMatchDialog.close()
+                content.activeSeriesKey = ""
+                content.awaitingManualSearch = false
+                return
+            }
+
             // Only refresh in place if we're specifically waiting on
             // a manual re-search we just triggered -- not on every
             // unrelated periodic poll, which would otherwise keep
@@ -90,6 +102,11 @@ Item {
 
     function maybeShowNextGrade() {
         if (gradeDialog.visible) {
+            if (content.activeGradeSeriesKey !== "" && !(content.activeGradeSeriesKey in content.backend.pendingGrades)) {
+                gradeDialog.close()
+                content.activeGradeSeriesKey = ""
+            }
+
             return
         }
 
@@ -130,6 +147,10 @@ Item {
 
     function maybeShowNextBatchWarning() {
         if (batchWarningDialog.visible) {
+            if (batchWarningDialog.warningKey !== "" && !(batchWarningDialog.warningKey in content.backend.batchWarnings)) {
+                batchWarningDialog.close()
+            }
+
             return
         }
 

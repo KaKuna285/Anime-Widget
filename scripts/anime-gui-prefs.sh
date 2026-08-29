@@ -1,23 +1,40 @@
 #!/bin/bash
-PREFS_FILE="$HOME/.config/anime-todo/add-series-prefs.json"
+FILE_NAME="$1"
+COMMAND="$2"
+VALUE="$3"
 
-case "$1" in
+if [ -z "$FILE_NAME" ] || [ -z "$COMMAND" ]; then
+    echo "Usage: $0 FILE_NAME get|set [JSON]"
+    exit 1
+fi
+
+# Basic safety: don't allow the caller to escape the config directory.
+case "$FILE_NAME" in
+    */*|*..*)
+        echo "Invalid file name: $FILE_NAME"
+        exit 1
+        ;;
+esac
+
+PREFS_FILE="$HOME/.config/anime-todo/$FILE_NAME"
+
+case "$COMMAND" in
     get)
         mkdir -p "$(dirname "$PREFS_FILE")"
         [ -f "$PREFS_FILE" ] || printf '{}\n' > "$PREFS_FILE"
         cat "$PREFS_FILE"
         ;;
     set)
-        if [ -z "$2" ]; then
-            echo "Usage: $0 set JSON"
+        if [ -z "$VALUE" ]; then
+            echo "Usage: $0 FILE_NAME set JSON"
             exit 1
         fi
 
         mkdir -p "$(dirname "$PREFS_FILE")"
-        printf '%s\n' "$2" > "$PREFS_FILE"
+        printf '%s\n' "$VALUE" > "$PREFS_FILE"
         ;;
     *)
-        echo "Usage: $0 get|set [JSON]"
+        echo "Usage: $0 FILE_NAME get|set [JSON]"
         exit 1
         ;;
 esac

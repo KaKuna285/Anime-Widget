@@ -103,7 +103,7 @@ Kirigami.ApplicationWindow {
         }
 
         executable.run(
-            prefsScriptPath + " set " +
+            prefsScriptPath + " add-series-prefs.json set " +
             JSON.stringify(JSON.stringify(prefs))
         )
     }
@@ -204,7 +204,7 @@ Kirigami.ApplicationWindow {
             var stdout = data["stdout"] || ""
             var stderr = data["stderr"] || ""
 
-            if (source.indexOf("anime-gui-prefs.sh get") !== -1) {
+            if (source.indexOf("anime-gui-prefs.sh add-series-prefs.json get") !== -1) {
                 window.prefsLoaded = true
 
                 if (exitCode === 0) {
@@ -403,7 +403,7 @@ Kirigami.ApplicationWindow {
 
     Component.onCompleted: {
         executable.run(rssHelperPath + " list-feeds")
-        executable.run(prefsScriptPath + " get")
+        executable.run(prefsScriptPath + " add-series-prefs.json get")
 
         window.loadingPlanToWatch = true
         executable.run(malUpdatePath + " --list plan_to_watch")

@@ -58,6 +58,9 @@ cp "$SCRIPT_DIR/scripts/anime-watch-changes.sh" "$BIN_DIR/anime-watch-changes.sh
 cp "$SCRIPT_DIR/scripts/anime-mal-details.py" "$BIN_DIR/anime-mal-details.py"
 cp "$SCRIPT_DIR/scripts/anime-rss-helper.py" "$BIN_DIR/anime-rss-helper.py"
 cp "$SCRIPT_DIR/scripts/anime-gui-prefs.sh" "$BIN_DIR/anime-gui-prefs.sh"
+mkdir -p "$SCRIPT_DIR/standalone"
+cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeBackend.qml" "$SCRIPT_DIR/standalone/AnimeBackend.qml"
+cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeContent.qml" "$SCRIPT_DIR/standalone/AnimeContent.qml"
 
 chmod +x "$BIN_DIR/anime-downloaded.sh"
 chmod +x "$BIN_DIR/anime-mal-auth.py"
