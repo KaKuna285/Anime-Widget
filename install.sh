@@ -57,6 +57,7 @@ cp "$SCRIPT_DIR/scripts/anime-parse-episode.py" "$BIN_DIR/anime-parse-episode.py
 cp "$SCRIPT_DIR/scripts/anime-watch-changes.sh" "$BIN_DIR/anime-watch-changes.sh"
 cp "$SCRIPT_DIR/scripts/anime-mal-details.py" "$BIN_DIR/anime-mal-details.py"
 cp "$SCRIPT_DIR/scripts/anime-rss-helper.py" "$BIN_DIR/anime-rss-helper.py"
+cp "$SCRIPT_DIR/scripts/anime-gui-prefs.sh" "$BIN_DIR/anime-gui-prefs.sh"
 
 chmod +x "$BIN_DIR/anime-downloaded.sh"
 chmod +x "$BIN_DIR/anime-mal-auth.py"
@@ -66,6 +67,7 @@ chmod +x "$BIN_DIR/anime-parse-episode.py"
 chmod +x "$BIN_DIR/anime-watch-changes.sh"
 chmod +x "$BIN_DIR/anime-mal-details.py"
 chmod +x "$BIN_DIR/anime-rss-helper.py"
+chmod +x "$BIN_DIR/anime-gui-prefs.sh"
 
 DESKTOP_DIR="$HOME/.local/share/applications"
 mkdir -p "$DESKTOP_DIR"

@@ -7,6 +7,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import re
 
 CONFIG = os.path.expanduser("~/.config/anime-todo/qbit.conf")
 
@@ -150,7 +151,47 @@ def create_rule(series_name, feed_url, save_path):
 
     print(f"Created RSS rule '{series_name}' -> {save_path}")
 
-def check_matches(series_name, feed_name):
+STOPWORDS = {
+    "a", "an", "the", "of", "no", "wa", "ni", "ga", "wo", "to",
+    "and", "in", "on", "at", "de", "da",
+}
+
+# Season/cour/part indicators frequently don't appear verbatim in a
+# release's actual filename, or appear in a different form than MAL
+# uses (e.g. MAL says "4th Season", the release just doesn't repeat
+# it; MAL says "III", the release uses "3" or omits it entirely).
+# These get excluded from the *required* word list so a season-
+# marker mismatch alone doesn't block an otherwise-correct match.
+SEASON_WORDS = {"season", "part", "cour"}
+SEASON_ROMAN_NUMERALS = {
+    "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x",
+}
+ORDINAL_SEASON_RE = re.compile(r"^\d+(st|nd|rd|th)$")
+
+
+def significant_words(text):
+    words = re.findall(r"[a-zA-Z0-9]+", text.lower())
+
+    result = []
+
+    for w in words:
+        if len(w) <= 2:
+            continue
+        if w in STOPWORDS:
+            continue
+        if w in SEASON_WORDS:
+            continue
+        if w in SEASON_ROMAN_NUMERALS:
+            continue
+        if ORDINAL_SEASON_RE.match(w):
+            continue
+
+        result.append(w)
+
+    return result
+
+
+def check_matches(match_text, feed_name):
     config = load_config()
     opener = make_opener()
     login(opener, config)
@@ -173,7 +214,8 @@ def check_matches(series_name, feed_name):
     feed = data.get(feed_name, {})
     articles = feed.get("articles", []) if isinstance(feed, dict) else []
 
-    needle = series_name.lower()
+    words = significant_words(match_text)
+
     titles = []
 
     for article in articles:
@@ -181,9 +223,22 @@ def check_matches(series_name, feed_name):
             continue
 
         title = article.get("title", "")
+        title_lower = title.lower()
 
-        if needle in title.lower():
-            titles.append(title)
+        if words:
+            # Require every significant word from the match text to
+            # appear somewhere in the article title, in any order --
+            # tolerates punctuation/colon-vs-dash differences and
+            # minor reordering that a strict full-string match would
+            # miss entirely.
+            if all(word in title_lower for word in words):
+                titles.append(title)
+        else:
+            # match_text was only stopwords or too short to
+            # tokenize -- fall back to a plain substring check
+            # rather than accidentally matching everything.
+            if match_text.lower() in title_lower:
+                titles.append(title)
 
     print(json.dumps({
         "totalMatches": len(titles),

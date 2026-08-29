@@ -7,6 +7,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
 
 CONFIG = os.path.expanduser("~/.config/anime-todo/mal.conf")
 PENDING_FILE = os.path.expanduser(
@@ -78,6 +79,71 @@ def search_mal(query, client_id, limit=6):
     with urllib.request.urlopen(request) as response:
         return json.load(response)
 
+def current_season():
+    now = datetime.now()
+    month = now.month
+    year = now.year
+
+    if month in (1, 2, 3):
+        return year, "winter"
+    elif month in (4, 5, 6):
+        return year, "spring"
+    elif month in (7, 8, 9):
+        return year, "summer"
+    else:
+        return year, "fall"
+
+
+def fetch_season(sort):
+    year, season = current_season()
+    client_id = load_client_id()
+
+    url = (
+        f"https://api.myanimelist.net/v2/anime/season/{year}/{season}"
+        f"?fields=alternative_titles,media_type,start_season,main_picture,mean,num_list_users"
+        f"&limit=100"
+    )
+
+    results = []
+
+    while url:
+        request = urllib.request.Request(
+            url,
+            headers={"X-MAL-Client-ID": client_id},
+        )
+
+        with urllib.request.urlopen(request) as response:
+            data = json.load(response)
+
+        for item in data.get("data", []):
+            node = item.get("node", {})
+
+            results.append({
+                "id": node.get("id"),
+                "title": node.get("title"),
+                "mediaType": node.get("media_type"),
+                "startYear": (node.get("start_season") or {}).get("year"),
+                "picture": (node.get("main_picture") or {}).get("medium"),
+                "score": node.get("mean"),
+                "members": node.get("num_list_users"),
+            })
+
+        url = data.get("paging", {}).get("next")
+
+    # Don't rely on MAL's own server-side sort -- unrated/unaired
+    # entries in a season frequently have no score at all, and MAL
+    # doesn't reliably push those to the end, which scrambles the
+    # ranking badly (confirmed: requesting fields=mean sorted by
+    # anime_score returned entries with the mean field missing
+    # entirely, mixed in among scored ones). Sort ourselves using
+    # the actual returned values instead, with missing values always
+    # pushed to the end regardless of sort mode.
+    if sort == "score":
+        results.sort(key=lambda r: (r["score"] is None, -(r["score"] or 0)))
+    else:
+        results.sort(key=lambda r: (r["members"] is None, -(r["members"] or 0)))
+
+    return results
 
 def load_pending():
     if not os.path.exists(PENDING_FILE):
@@ -96,6 +162,18 @@ def save_pending(pending):
 
 
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "--season":
+        sort = sys.argv[2] if len(sys.argv) == 3 else "popularity"
+
+        try:
+            results = fetch_season(sort)
+            print(json.dumps(results, ensure_ascii=False))
+        except Exception as e:
+            print(f"Failed to fetch seasonal anime: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        return
+
     if len(sys.argv) not in (2, 3):
         print(f"Usage: {sys.argv[0]} SERIES_KEY [QUERY]", file=sys.stderr)
         sys.exit(1)
