@@ -345,24 +345,33 @@ def update_watched(mal_id, episode):
         episode
     )
 
-    if new_watched == current_watched:
+    update_data = {}
+
+    if new_watched != current_watched:
+        update_data["num_watched_episodes"] = new_watched
+
+    # Actually watching episodes should move a plan-to-watch/
+    # on-hold/dropped entry to "watching" -- MAL doesn't infer this
+    # automatically from an episode-count update alone.
+    if status in ("plan_to_watch", "on_hold", "dropped"):
+        update_data["status"] = "watching"
+
+    if not update_data:
         print(
             f"MAL is already at "
-            f"{current_watched} episodes."
+            f"{current_watched} episodes with status '{status}'."
         )
 
         log(
             f"MAL ID {mal_id} already at "
-            f"{current_watched} episodes; "
+            f"{current_watched} episodes ({status}); "
             f"checked episode {episode}"
         )
 
         return
 
     print(
-        f"Updating MAL from "
-        f"{current_watched} to "
-        f"{new_watched} episodes..."
+        f"Updating MAL: {update_data} ..."
     )
 
     url = (
@@ -373,14 +382,11 @@ def update_watched(mal_id, episode):
     result = api_request(
         url,
         method="PUT",
-        data={
-            "num_watched_episodes": new_watched
-        }
+        data=update_data
     )
 
     log(
-        f"Successfully updated MAL ID {mal_id} "
-        f"to episode {episode}"
+        f"Successfully updated MAL ID {mal_id}: {update_data}"
     )
 
     print("MAL updated successfully.")
