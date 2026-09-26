@@ -26,6 +26,7 @@ Item {
     property string errorSource: ""
     property string errorMessage: ""
     property string lastShownError: ""
+    property string animeRoot: ""
 
     function preferredTitle(entry) {
         if (!entry) {
@@ -314,6 +315,14 @@ Item {
         refreshTimer.restart()
     }
 
+    function setAnimeRoot(path) {
+        executable.run(
+            scriptPath + " set-config " + JSON.stringify(path)
+        )
+
+        refreshTimer.restart()
+    }
+
     function refresh() {
         executable.run(scriptPath + " list")
         executable.run(scriptPath + " history")
@@ -322,6 +331,7 @@ Item {
         executable.run(scriptPath + " pending-grades")
         executable.run(scriptPath + " last-removed")
         executable.run(scriptPath + " batch-warnings")
+        executable.run(scriptPath + " get-config")
     }
 
     Plasma5Support.DataSource {
@@ -440,6 +450,10 @@ Item {
                     console.log("Failed to parse batch warnings JSON:", error)
                     backend.batchWarnings = {}
                 }
+            }
+
+            if (source === backend.scriptPath + " get-config") {
+                backend.animeRoot = (data["stdout"] || "").trim()
             }
         }
 

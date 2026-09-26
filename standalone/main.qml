@@ -33,7 +33,6 @@ Kirigami.ApplicationWindow {
     property int titleSize: 16
     property int episodeSize: 14
     property int itemSpacing: 6
-    property real backgroundOpacity: 100
     property int refreshInterval: 3
     property bool confirmUndo: true
     property bool askToGrade: true
@@ -46,7 +45,6 @@ Kirigami.ApplicationWindow {
             titleSize: window.titleSize,
             episodeSize: window.episodeSize,
             itemSpacing: window.itemSpacing,
-            backgroundOpacity: window.backgroundOpacity,
             refreshInterval: window.refreshInterval,
             confirmUndo: window.confirmUndo,
             askToGrade: window.askToGrade,
@@ -66,6 +64,16 @@ Kirigami.ApplicationWindow {
 
         onNewData: function(source, data) {
             disconnectSource(source)
+
+            if (source.indexOf("get-config") !== -1) {
+                animeRootField.text = (data["stdout"] || "").trim()
+                return
+            }
+
+            if (source.indexOf("set-config") !== -1) {
+                animeRootStatus.text = (data["stdout"] || "").trim()
+                return
+            }
 
             if (source.indexOf("standalone-prefs.json get") !== -1) {
                 window.prefsLoaded = true
@@ -99,8 +107,17 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    property string scriptPath: "$HOME/.local/bin/anime-downloaded.sh"
+
+    function setAnimeRoot(path) {
+        prefsExecutable.run(
+            scriptPath + " set-config " + JSON.stringify(path)
+        )
+    }
+
     Component.onCompleted: {
         prefsExecutable.run(prefsScriptPath + " standalone-prefs.json get")
+        prefsExecutable.run(scriptPath + " get-config")
     }
 
     AnimeBackend {
@@ -216,17 +233,6 @@ Kirigami.ApplicationWindow {
                         window.savePrefs()
                     }
                 }
-
-                Controls.Label { text: i18n("Background opacity:") }
-                Controls.SpinBox {
-                    from: 0
-                    to: 100
-                    value: window.backgroundOpacity
-                    onValueModified: {
-                        window.backgroundOpacity = value
-                        window.savePrefs()
-                    }
-                }
             }
 
             ColumnLayout {
@@ -271,6 +277,45 @@ Kirigami.ApplicationWindow {
                         window.savePrefs()
                     }
                 }
+
+                Kirigami.Separator {
+                    Layout.fillWidth: true
+                }
+
+                Controls.Label {
+                    text: i18n("Anime root folder:")
+                    font.bold: true
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Controls.TextField {
+                        id: animeRootField
+                        Layout.fillWidth: true
+                        placeholderText: i18n("e.g. /home/you/Anime")
+                    }
+
+                    Controls.Button {
+                        text: i18n("Save")
+                        onClicked: window.setAnimeRoot(animeRootField.text)
+                    }
+                }
+
+                Controls.Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    opacity: 0.7
+                    text: i18n("Downloads outside this folder (and its subfolders) are ignored -- helps avoid false matches from other TV shows sharing the same qBittorrent hook. Leave empty to track everything.")
+                }
+
+                Controls.Label {
+                    id: animeRootStatus
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    opacity: 0.7
+                }
             }
         }
 
@@ -284,27 +329,20 @@ Kirigami.ApplicationWindow {
     }
 
     pageStack.initialPage: Kirigami.Page {
-        title: i18n("Anime-Widget")
+        padding: 0
 
-        actions: [
-            Kirigami.Action {
-                text: i18n("Settings")
-                icon.name: "configure"
-                onTriggered: settingsDialog.open()
-            }
-        ]
-
-        AnimeContent {
+        AnimeAppView {
             anchors.fill: parent
             backend: animeBackend
             askToGrade: window.askToGrade
             confirmUndo: window.confirmUndo
-            backgroundOpacity: window.backgroundOpacity
             itemSpacing: window.itemSpacing
             titleSize: window.titleSize
             episodeSize: window.episodeSize
             title: window.appTitle
             emptyTitle: window.emptyTitle
+
+            onSettingsRequested: settingsDialog.open()
         }
     }
 }

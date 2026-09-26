@@ -12,6 +12,13 @@ LOCK_FILE="$HOME/.local/share/anime-todo.lock"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PENDING_TIMEOUT_SECONDS=120
 
+CONFIG_FILE="$HOME/.config/anime-todo/anime-todo.conf"
+ANIME_ROOT=""
+
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+fi
+
 ensure_files() {
     mkdir -p "$(dirname "$TODO")"
 
@@ -34,6 +41,36 @@ with_lock() {
         flock -x 200
         "$@"
     ) 200>"$LOCK_FILE"
+}
+
+# Returns true (0) if PATH is inside the configured ANIME_ROOT (or
+# is ANIME_ROOT itself), or if ANIME_ROOT isn't configured at all --
+# in which case nothing is restricted, preserving existing behavior
+# until the user opts in.
+is_within_anime_root() {
+    if [ -z "$ANIME_ROOT" ]; then
+        return 0
+    fi
+
+    local path="$1"
+    local resolved_path
+    local resolved_root
+
+    resolved_path="$(realpath -m "$path" 2>/dev/null)"
+    resolved_root="$(realpath -m "$ANIME_ROOT" 2>/dev/null)"
+
+    if [ -z "$resolved_path" ] || [ -z "$resolved_root" ]; then
+        return 1
+    fi
+
+    case "$resolved_path" in
+        "$resolved_root"|"$resolved_root"/*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 # Writes a "searching" placeholder into PENDING for SERIES so that
@@ -104,6 +141,28 @@ group_label() {
             echo "$series Season $season"
             ;;
     esac
+}
+
+# Runs the user's external anime-library linking script (if
+# configured) in the background after a real download was
+# successfully processed. Never blocks anime-downloaded.sh --
+# backgrounded and detached, same pattern as the MAL search calls.
+# Safe to leave configured even if the script doesn't exist on this
+# machine; it just silently no-ops.
+LIBRARY_LINK_SCRIPT="$HOME/scripts/anime_link.py"
+LIBRARY_LINK_SOURCE="$HOME/Anime"
+LIBRARY_LINK_DEST="$HOME/AnimeLibrary"
+LIBRARY_LINK_LOG="$HOME/scripts/anime_link.log"
+
+run_library_link() {
+    if [ ! -f "$LIBRARY_LINK_SCRIPT" ]; then
+        return
+    fi
+
+    (
+        /usr/bin/python3 "$LIBRARY_LINK_SCRIPT" "$LIBRARY_LINK_SOURCE" "$LIBRARY_LINK_DEST" --prune >> "$LIBRARY_LINK_LOG" 2>&1
+    ) &
+    disown
 }
 
 # Queues a single, already-parsed episode/movie/OVA/special from
@@ -1006,6 +1065,41 @@ PY
         ) 200>"$LOCK_FILE"
         ;;
 
+    get-config)
+        ensure_files
+
+        (
+            flock -s 200
+
+            if [ -f "$CONFIG_FILE" ]; then
+                ANIME_ROOT=""
+                source "$CONFIG_FILE"
+                echo "$ANIME_ROOT"
+            else
+                echo ""
+            fi
+        ) 200>"$LOCK_FILE"
+        ;;
+
+    set-config)
+        NEW_ROOT="$2"
+
+        ensure_files
+
+        (
+            flock -x 200
+
+            mkdir -p "$(dirname "$CONFIG_FILE")"
+            printf 'ANIME_ROOT="%s"\n' "$NEW_ROOT" > "$CONFIG_FILE"
+
+            if [ -n "$NEW_ROOT" ]; then
+                echo "Anime root set to: $NEW_ROOT"
+            else
+                echo "Anime root cleared -- all downloads will be tracked."
+            fi
+        ) 200>"$LOCK_FILE"
+        ;;
+
     batch-warnings)
         ensure_files
         (
@@ -1209,6 +1303,11 @@ PY
 
         SERIES="$(basename "$SAVE_PATH")"
 
+        if ! is_within_anime_root "$SAVE_PATH"; then
+            echo "Skipping '$TORRENT_NAME' -- save path '$SAVE_PATH' is outside the configured anime root ($ANIME_ROOT)."
+            exit 0
+        fi
+
         if [ -d "$CONTENT_PATH" ]; then
             ensure_files
 
@@ -1291,6 +1390,10 @@ PY
                     done
 
                     echo "Batch '$TORRENT_NAME' contains $GROUP_COUNT distinct groups ($GROUP_LIST) -- each is being matched to MAL independently."
+                fi
+
+                if [ "$FILE_COUNT" -gt 0 ]; then
+                    run_library_link
                 fi
             ) 200>"$LOCK_FILE"
 
@@ -1429,6 +1532,12 @@ PY
                     start_series_search "$SERIES"
                 fi
             ) 200>"$LOCK_FILE"
+
+            QUEUE_EXIT=$?
+
+            if [ "$QUEUE_EXIT" -eq 0 ]; then
+                run_library_link
+            fi
         fi
         ;;
 esac

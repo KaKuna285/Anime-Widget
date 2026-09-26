@@ -125,6 +125,7 @@ if [ "$INSTALL_MODE" = "standalone" ] || [ "$INSTALL_MODE" = "both" ]; then
     mkdir -p "$SCRIPT_DIR/standalone"
     cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeBackend.qml" "$SCRIPT_DIR/standalone/AnimeBackend.qml"
     cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeContent.qml" "$SCRIPT_DIR/standalone/AnimeContent.qml"
+    cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeDialogs.qml" "$SCRIPT_DIR/standalone/AnimeDialogs.qml"
 
     cat > "$DESKTOP_DIR/anime-widget-standalone.desktop" << EOF
 [Desktop Entry]

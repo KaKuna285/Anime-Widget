@@ -1,0 +1,510 @@
+[1mdiff --git a/install.sh b/install.sh[m
+[1mindex 6b7a71a..823cb39 100755[m
+[1m--- a/install.sh[m
+[1m+++ b/install.sh[m
+[36m@@ -125,6 +125,7 @@[m [mif [ "$INSTALL_MODE" = "standalone" ] || [ "$INSTALL_MODE" = "both" ]; then[m
+     mkdir -p "$SCRIPT_DIR/standalone"[m
+     cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeBackend.qml" "$SCRIPT_DIR/standalone/AnimeBackend.qml"[m
+     cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeContent.qml" "$SCRIPT_DIR/standalone/AnimeContent.qml"[m
+[32m+[m[32m    cp "$SCRIPT_DIR/plasmoid/contents/ui/AnimeDialogs.qml" "$SCRIPT_DIR/standalone/AnimeDialogs.qml"[m
+ [m
+     cat > "$DESKTOP_DIR/anime-widget-standalone.desktop" << EOF[m
+ [Desktop Entry][m
+[1mdiff --git a/plasmoid/contents/ui/AnimeBackend.qml b/plasmoid/contents/ui/AnimeBackend.qml[m
+[1mindex c3ec4ac..6320ef9 100644[m
+[1m--- a/plasmoid/contents/ui/AnimeBackend.qml[m
+[1m+++ b/plasmoid/contents/ui/AnimeBackend.qml[m
+[36m@@ -26,6 +26,7 @@[m [mItem {[m
+     property string errorSource: ""[m
+     property string errorMessage: ""[m
+     property string lastShownError: ""[m
+[32m+[m[32m    property string animeRoot: ""[m
+ [m
+     function preferredTitle(entry) {[m
+         if (!entry) {[m
+[36m@@ -314,6 +315,14 @@[m [mItem {[m
+         refreshTimer.restart()[m
+     }[m
+ [m
+[32m+[m[32m    function setAnimeRoot(path) {[m
+[32m+[m[32m        executable.run([m
+[32m+[m[32m            scriptPath + " set-config " + JSON.stringify(path)[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m        refreshTimer.restart()[m
+[32m+[m[32m    }[m
+[32m+[m
+     function refresh() {[m
+         executable.run(scriptPath + " list")[m
+         executable.run(scriptPath + " history")[m
+[36m@@ -322,6 +331,7 @@[m [mItem {[m
+         executable.run(scriptPath + " pending-grades")[m
+         executable.run(scriptPath + " last-removed")[m
+         executable.run(scriptPath + " batch-warnings")[m
+[32m+[m[32m        executable.run(scriptPath + " get-config")[m
+     }[m
+ [m
+     Plasma5Support.DataSource {[m
+[36m@@ -441,6 +451,10 @@[m [mItem {[m
+                     backend.batchWarnings = {}[m
+                 }[m
+             }[m
+[32m+[m
+[32m+[m[32m            if (source === backend.scriptPath + " get-config") {[m
+[32m+[m[32m                backend.animeRoot = (data["stdout"] || "").trim()[m
+[32m+[m[32m            }[m
+         }[m
+ [m
+         function run(command) {[m
+[1mdiff --git a/plasmoid/contents/ui/ConfigBehavior.qml b/plasmoid/contents/ui/ConfigBehavior.qml[m
+[1mindex 853ee96..cd3a218 100644[m
+[1m--- a/plasmoid/contents/ui/ConfigBehavior.qml[m
+[1m+++ b/plasmoid/contents/ui/ConfigBehavior.qml[m
+[36m@@ -2,6 +2,7 @@[m [mimport QtQuick[m
+ import QtQuick.Controls as QQC2[m
+ import QtQuick.Layouts[m
+ import org.kde.kirigami as Kirigami[m
+[32m+[m[32mimport org.kde.plasma.plasma5support as Plasma5Support[m
+ [m
+ Kirigami.FormLayout {[m
+     id: page[m
+[36m@@ -9,7 +10,34 @@[m [mKirigami.FormLayout {[m
+     property alias cfg_refreshInterval: refreshSpin.value[m
+     property alias cfg_confirmUndo: confirmUndoCheck.checked[m
+     property alias cfg_askToGrade: askToGradeCheck.checked[m
+[31m-    property alias cfg_preferEnglishTitle: preferEnglishTitleCheck.checked[m
+[32m+[m
+[32m+[m[32m    property string scriptPath: "$HOME/.local/bin/anime-downloaded.sh"[m
+[32m+[m
+[32m+[m[32m    Plasma5Support.DataSource {[m
+[32m+[m[32m        id: executable[m
+[32m+[m[32m        engine: "executable"[m
+[32m+[m[32m        connectedSources: [][m
+[32m+[m
+[32m+[m[32m        onNewData: function(source, data) {[m
+[32m+[m[32m            disconnectSource(source)[m
+[32m+[m
+[32m+[m[32m            if (source === scriptPath + " get-config") {[m
+[32m+[m[32m                animeRootField.text = (data["stdout"] || "").trim()[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            if (source.indexOf("set-config") !== -1) {[m
+[32m+[m[32m                animeRootStatus.text = (data["stdout"] || "").trim()[m
+[32m+[m[32m            }[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        function run(command) {[m
+[32m+[m[32m            connectSource(command)[m
+[32m+[m[32m        }[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    Component.onCompleted: {[m
+[32m+[m[32m        executable.run(scriptPath + " get-config")[m
+[32m+[m[32m    }[m
+ [m
+     QQC2.SpinBox {[m
+         id: refreshSpin[m
+[36m@@ -45,8 +73,41 @@[m [mKirigami.FormLayout {[m
+         text: i18n("Ask me to rate a show when I finish it")[m
+     }[m
+ [m
+[31m-    QQC2.CheckBox {[m
+[31m-        id: preferEnglishTitleCheck[m
+[31m-        text: i18n("Prefer English titles over Japanese/romaji")[m
+[32m+[m[32m    Kirigami.Separator {[m
+[32m+[m[32m        Kirigami.FormData.isSection: true[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    RowLayout {[m
+[32m+[m[32m        Kirigami.FormData.label: i18n("Anime root folder:")[m
+[32m+[m[32m        spacing: Kirigami.Units.smallSpacing[m
+[32m+[m
+[32m+[m[32m        QQC2.TextField {[m
+[32m+[m[32m            id: animeRootField[m
+[32m+[m[32m            Layout.preferredWidth: Kirigami.Units.gridUnit * 16[m
+[32m+[m[32m            placeholderText: i18n("e.g. /home/you/Anime")[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        QQC2.Button {[m
+[32m+[m[32m            text: i18n("Save")[m
+[32m+[m[32m            onClicked: executable.run([m
+[32m+[m[32m                scriptPath + " set-config " + JSON.stringify(animeRootField.text)[m
+[32m+[m[32m            )[m
+[32m+[m[32m        }[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    QQC2.Label {[m
+[32m+[m[32m        Kirigami.FormData.label: ""[m
+[32m+[m[32m        Layout.fillWidth: true[m
+[32m+[m[32m        wrapMode: Text.WordWrap[m
+[32m+[m[32m        opacity: 0.7[m
+[32m+[m[32m        text: i18n("Downloads outside this folder (and its subfolders) are ignored -- helps avoid false matches from other TV shows sharing the same qBittorrent hook. Leave empty to track everything.")[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    QQC2.Label {[m
+[32m+[m[32m        id: animeRootStatus[m
+[32m+[m[32m        Kirigami.FormData.label: ""[m
+[32m+[m[32m        Layout.fillWidth: true[m
+[32m+[m[32m        wrapMode: Text.WordWrap[m
+[32m+[m[32m        opacity: 0.7[m
+     }[m
+ }[m
+[1mdiff --git a/scripts/anime-downloaded.sh b/scripts/anime-downloaded.sh[m
+[1mindex 6c4a4f6..4bb5f43 100755[m
+[1m--- a/scripts/anime-downloaded.sh[m
+[1m+++ b/scripts/anime-downloaded.sh[m
+[36m@@ -12,6 +12,13 @@[m [mLOCK_FILE="$HOME/.local/share/anime-todo.lock"[m
+ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"[m
+ PENDING_TIMEOUT_SECONDS=120[m
+ [m
+[32m+[m[32mCONFIG_FILE="$HOME/.config/anime-todo/anime-todo.conf"[m
+[32m+[m[32mANIME_ROOT=""[m
+[32m+[m
+[32m+[m[32mif [ -f "$CONFIG_FILE" ]; then[m
+[32m+[m[32m    source "$CONFIG_FILE"[m
+[32m+[m[32mfi[m
+[32m+[m
+ ensure_files() {[m
+     mkdir -p "$(dirname "$TODO")"[m
+ [m
+[36m@@ -36,6 +43,36 @@[m [mwith_lock() {[m
+     ) 200>"$LOCK_FILE"[m
+ }[m
+ [m
+[32m+[m[32m# Returns true (0) if PATH is inside the configured ANIME_ROOT (or[m
+[32m+[m[32m# is ANIME_ROOT itself), or if ANIME_ROOT isn't configured at all --[m
+[32m+[m[32m# in which case nothing is restricted, preserving existing behavior[m
+[32m+[m[32m# until the user opts in.[m
+[32m+[m[32mis_within_anime_root() {[m
+[32m+[m[32m    if [ -z "$ANIME_ROOT" ]; then[m
+[32m+[m[32m        return 0[m
+[32m+[m[32m    fi[m
+[32m+[m
+[32m+[m[32m    local path="$1"[m
+[32m+[m[32m    local resolved_path[m
+[32m+[m[32m    local resolved_root[m
+[32m+[m
+[32m+[m[32m    resolved_path="$(realpath -m "$path" 2>/dev/null)"[m
+[32m+[m[32m    resolved_root="$(realpath -m "$ANIME_ROOT" 2>/dev/null)"[m
+[32m+[m
+[32m+[m[32m    if [ -z "$resolved_path" ] || [ -z "$resolved_root" ]; then[m
+[32m+[m[32m        return 1[m
+[32m+[m[32m    fi[m
+[32m+[m
+[32m+[m[32m    case "$resolved_path" in[m
+[32m+[m[32m        "$resolved_root"|"$resolved_root"/*)[m
+[32m+[m[32m            return 0[m
+[32m+[m[32m            ;;[m
+[32m+[m[32m        *)[m
+[32m+[m[32m            return 1[m
+[32m+[m[32m            ;;[m
+[32m+[m[32m    esac[m
+[32m+[m[32m}[m
+[32m+[m
+ # Writes a "searching" placeholder into PENDING for SERIES so that[m
+ # concurrent episode completions don't each trigger their own search.[m
+ mark_pending() {[m
+[36m@@ -106,6 +143,28 @@[m [mgroup_label() {[m
+     esac[m
+ }[m
+ [m
+[32m+[m[32m# Runs the user's external anime-library linking script (if[m
+[32m+[m[32m# configured) in the background after a real download was[m
+[32m+[m[32m# successfully processed. Never blocks anime-downloaded.sh --[m
+[32m+[m[32m# backgrounded and detached, same pattern as the MAL search calls.[m
+[32m+[m[32m# Safe to leave configured even if the script doesn't exist on this[m
+[32m+[m[32m# machine; it just silently no-ops.[m
+[32m+[m[32mLIBRARY_LINK_SCRIPT="$HOME/scripts/anime_link.py"[m
+[32m+[m[32mLIBRARY_LINK_SOURCE="$HOME/Anime"[m
+[32m+[m[32mLIBRARY_LINK_DEST="$HOME/AnimeLibrary"[m
+[32m+[m[32mLIBRARY_LINK_LOG="$HOME/scripts/anime_link.log"[m
+[32m+[m
+[32m+[m[32mrun_library_link() {[m
+[32m+[m[32m    if [ ! -f "$LIBRARY_LINK_SCRIPT" ]; then[m
+[32m+[m[32m        return[m
+[32m+[m[32m    fi[m
+[32m+[m
+[32m+[m[32m    ([m
+[32m+[m[32m        /usr/bin/python3 "$LIBRARY_LINK_SCRIPT" "$LIBRARY_LINK_SOURCE" "$LIBRARY_LINK_DEST" --prune >> "$LIBRARY_LINK_LOG" 2>&1[m
+[32m+[m[32m    ) &[m
+[32m+[m[32m    disown[m
+[32m+[m[32m}[m
+[32m+[m
+ # Queues a single, already-parsed episode/movie/OVA/special from[m
+ # inside a batch torrent under the given MAL-matching identity[m
+ # (SERIES_KEY may be the plain folder name, or a composite[m
+[36m@@ -1006,6 +1065,41 @@[m [mPY[m
+         ) 200>"$LOCK_FILE"[m
+         ;;[m
+ [m
+[32m+[m[32m    get-config)[m
+[32m+[m[32m        ensure_files[m
+[32m+[m
+[32m+[m[32m        ([m
+[32m+[m[32m            flock -s 200[m
+[32m+[m
+[32m+[m[32m            if [ -f "$CONFIG_FILE" ]; then[m
+[32m+[m[32m                ANIME_ROOT=""[m
+[32m+[m[32m                source "$CONFIG_FILE"[m
+[32m+[m[32m                echo "$ANIME_ROOT"[m
+[32m+[m[32m            else[m
+[32m+[m[32m                echo ""[m
+[32m+[m[32m            fi[m
+[32m+[m[32m        ) 200>"$LOCK_FILE"[m
+[32m+[m[32m        ;;[m
+[32m+[m
+[32m+[m[32m    set-config)[m
+[32m+[m[32m        NEW_ROOT="$2"[m
+[32m+[m
+[32m+[m[32m        ensure_files[m
+[32m+[m
+[32m+[m[32m        ([m
+[32m+[m[32m            flock -x 200[m
+[32m+[m
+[32m+[m[32m            mkdir -p "$(dirname "$CONFIG_FILE")"[m
+[32m+[m[32m            printf 'ANIME_ROOT="%s"\n' "$NEW_ROOT" > "$CONFIG_FILE"[m
+[32m+[m
+[32m+[m[32m            if [ -n "$NEW_ROOT" ]; then[m
+[32m+[m[32m                echo "Anime root set to: $NEW_ROOT"[m
+[32m+[m[32m            else[m
+[32m+[m[32m                echo "Anime root cleared -- all downloads will be tracked."[m
+[32m+[m[32m            fi[m
+[32m+[m[32m        ) 200>"$LOCK_FILE"[m
+[32m+[m[32m        ;;[m
+[32m+[m
+     batch-warnings)[m
+         ensure_files[m
+         ([m
+[36m@@ -1209,6 +1303,11 @@[m [mPY[m
+ [m
+         SERIES="$(basename "$SAVE_PATH")"[m
+ [m
+[32m+[m[32m        if ! is_within_anime_root "$SAVE_PATH"; then[m
+[32m+[m[32m            echo "Skipping '$TORRENT_NAME' -- save path '$SAVE_PATH' is outside the configured anime root ($ANIME_ROOT)."[m
+[32m+[m[32m            exit 0[m
+[32m+[m[32m        fi[m
+[32m+[m
+         if [ -d "$CONTENT_PATH" ]; then[m
+             ensure_files[m
+ [m
+[36m@@ -1292,6 +1391,10 @@[m [mPY[m
+ [m
+                     echo "Batch '$TORRENT_NAME' contains $GROUP_COUNT distinct groups ($GROUP_LIST) -- each is being matched to MAL independently."[m
+                 fi[m
+[32m+[m
+[32m+[m[32m                if [ "$FILE_COUNT" -gt 0 ]; then[m
+[32m+[m[32m                    run_library_link[m
+[32m+[m[32m                fi[m
+             ) 200>"$LOCK_FILE"[m
+ [m
+             exit 0[m
+[36m@@ -1429,6 +1532,12 @@[m [mPY[m
+                     start_series_search "$SERIES"[m
+                 fi[m
+             ) 200>"$LOCK_FILE"[m
+[32m+[m
+[32m+[m[32m            QUEUE_EXIT=$?[m
+[32m+[m
+[32m+[m[32m            if [ "$QUEUE_EXIT" -eq 0 ]; then[m
+[32m+[m[32m                run_library_link[m
+[32m+[m[32m            fi[m
+         fi[m
+         ;;[m
+ esac[m
+[1mdiff --git a/standalone/AnimeBackend.qml b/standalone/AnimeBackend.qml[m
+[1mindex c3ec4ac..6320ef9 100644[m
+[1m--- a/standalone/AnimeBackend.qml[m
+[1m+++ b/standalone/AnimeBackend.qml[m
+[36m@@ -26,6 +26,7 @@[m [mItem {[m
+     property string errorSource: ""[m
+     property string errorMessage: ""[m
+     property string lastShownError: ""[m
+[32m+[m[32m    property string animeRoot: ""[m
+ [m
+     function preferredTitle(entry) {[m
+         if (!entry) {[m
+[36m@@ -314,6 +315,14 @@[m [mItem {[m
+         refreshTimer.restart()[m
+     }[m
+ [m
+[32m+[m[32m    function setAnimeRoot(path) {[m
+[32m+[m[32m        executable.run([m
+[32m+[m[32m            scriptPath + " set-config " + JSON.stringify(path)[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m        refreshTimer.restart()[m
+[32m+[m[32m    }[m
+[32m+[m
+     function refresh() {[m
+         executable.run(scriptPath + " list")[m
+         executable.run(scriptPath + " history")[m
+[36m@@ -322,6 +331,7 @@[m [mItem {[m
+         executable.run(scriptPath + " pending-grades")[m
+         executable.run(scriptPath + " last-removed")[m
+         executable.run(scriptPath + " batch-warnings")[m
+[32m+[m[32m        executable.run(scriptPath + " get-config")[m
+     }[m
+ [m
+     Plasma5Support.DataSource {[m
+[36m@@ -441,6 +451,10 @@[m [mItem {[m
+                     backend.batchWarnings = {}[m
+                 }[m
+             }[m
+[32m+[m
+[32m+[m[32m            if (source === backend.scriptPath + " get-config") {[m
+[32m+[m[32m                backend.animeRoot = (data["stdout"] || "").trim()[m
+[32m+[m[32m            }[m
+         }[m
+ [m
+         function run(command) {[m
+[1mdiff --git a/standalone/main.qml b/standalone/main.qml[m
+[1mindex 09e4eea..9571c7a 100644[m
+[1m--- a/standalone/main.qml[m
+[1m+++ b/standalone/main.qml[m
+[36m@@ -33,7 +33,6 @@[m [mKirigami.ApplicationWindow {[m
+     property int titleSize: 16[m
+     property int episodeSize: 14[m
+     property int itemSpacing: 6[m
+[31m-    property real backgroundOpacity: 100[m
+     property int refreshInterval: 3[m
+     property bool confirmUndo: true[m
+     property bool askToGrade: true[m
+[36m@@ -46,7 +45,6 @@[m [mKirigami.ApplicationWindow {[m
+             titleSize: window.titleSize,[m
+             episodeSize: window.episodeSize,[m
+             itemSpacing: window.itemSpacing,[m
+[31m-            backgroundOpacity: window.backgroundOpacity,[m
+             refreshInterval: window.refreshInterval,[m
+             confirmUndo: window.confirmUndo,[m
+             askToGrade: window.askToGrade,[m
+[36m@@ -67,6 +65,16 @@[m [mKirigami.ApplicationWindow {[m
+         onNewData: function(source, data) {[m
+             disconnectSource(source)[m
+ [m
+[32m+[m[32m            if (source.indexOf("get-config") !== -1) {[m
+[32m+[m[32m                animeRootField.text = (data["stdout"] || "").trim()[m
+[32m+[m[32m                return[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            if (source.indexOf("set-config") !== -1) {[m
+[32m+[m[32m                animeRootStatus.text = (data["stdout"] || "").trim()[m
+[32m+[m[32m                return[m
+[32m+[m[32m            }[m
+[32m+[m
+             if (source.indexOf("standalone-prefs.json get") !== -1) {[m
+                 window.prefsLoaded = true[m
+ [m
+[36m@@ -99,8 +107,17 @@[m [mKirigami.ApplicationWindow {[m
+         }[m
+     }[m
+ [m
+[32m+[m[32m    property string scriptPath: "$HOME/.local/bin/anime-downloaded.sh"[m
+[32m+[m
+[32m+[m[32m    function setAnimeRoot(path) {[m
+[32m+[m[32m        prefsExecutable.run([m
+[32m+[m[32m            scriptPath + " set-config " + JSON.stringify(path)[m
+[32m+[m[32m        )[m
+[32m+[m[32m    }[m
+[32m+[m
+     Component.onCompleted: {[m
+         prefsExecutable.run(prefsScriptPath + " standalone-prefs.json get")[m
+[32m+[m[32m        prefsExecutable.run(scriptPath + " get-config")[m
+     }[m
+ [m
+     AnimeBackend {[m
+[36m@@ -216,17 +233,6 @@[m [mKirigami.ApplicationWindow {[m
+                         window.savePrefs()[m
+                     }[m
+                 }[m
+[31m-[m
+[31m-                Controls.Label { text: i18n("Background opacity:") }[m
+[31m-                Controls.SpinBox {[m
+[31m-                    from: 0[m
+[31m-                    to: 100[m
+[31m-                    value: window.backgroundOpacity[m
+[31m-                    onValueModified: {[m
+[31m-                        window.backgroundOpacity = value[m
+[31m-                        window.savePrefs()[m
+[31m-                    }[m
+[31m-                }[m
+             }[m
+ [m
+             ColumnLayout {[m
+[36m@@ -271,6 +277,45 @@[m [mKirigami.ApplicationWindow {[m
+                         window.savePrefs()[m
+                     }[m
+                 }[m
+[32m+[m
+[32m+[m[32m                Kirigami.Separator {[m
+[32m+[m[32m                    Layout.fillWidth: true[m
+[32m+[m[32m                }[m
+[32m+[m
+[32m+[m[32m                Controls.Label {[m
+[32m+[m[32m                    text: i18n("Anime root folder:")[m
+[32m+[m[32m                    font.bold: true[m
+[32m+[m[32m                }[m
+[32m+[m
+[32m+[m[32m                RowLayout {[m
+[32m+[m[32m                    Layout.fillWidth: true[m
+[32m+[m[32m                    spacing: Kirigami.Units.smallSpacing[m
+[32m+[m
+[32m+[m[32m                    Controls.TextField {[m
+[32m+[m[32m                        id: animeRootField[m
+[32m+[m[32m                        Layout.fillWidth: true[m
+[32m+[m[32m                        placeholderText: i18n("e.g. /home/you/Anime")[m
+[32m+[m[32m                    }[m
+[32m+[m
+[32m+[m[32m                    Controls.Button {[m
+[32m+[m[32m                        text: i18n("Save")[m
+[32m+[m[32m                        onClicked: window.setAnimeRoot(animeRootField.text)[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                }[m
+[32m+[m
+[32m+[m[32m                Controls.Label {[m
+[32m+[m[32m                    Layout.fillWidth: true[m
+[32m+[m[32m                    wrapMode: Text.WordWrap[m
+[32m+[m[32m                    opacity: 0.7[m
+[32m+[m[32m                    text: i18n("Downloads outside this folder (and its subfolders) are ignored -- helps avoid false matches from other TV shows sharing the same qBittorrent hook. Leave empty to track everything.")[m
+[32m+[m[32m                }[m
+[32m+[m
+[32m+[m[32m                Controls.Label {[m
+[32m+[m[32m                    id: animeRootStatus[m
+[32m+[m[32m                    Layout.fillWidth: true[m
+[32m+[m[32m                    wrapMode: Text.WordWrap[m
+[32m+[m[32m                    opacity: 0.7[m
+[32m+[m[32m                }[m
+             }[m
+         }[m
+ [m
+[36m@@ -284,27 +329,20 @@[m [mKirigami.ApplicationWindow {[m
+     }[m
+ [m
+     pageStack.initialPage: Kirigami.Page {[m
+[31m-        title: i18n("Anime-Widget")[m
+[31m-[m
+[31m-        actions: [[m
+[31m-            Kirigami.Action {[m
+[31m-                text: i18n("Settings")[m
+[31m-                icon.name: "configure"[m
+[31m-                onTriggered: settingsDialog.open()[m
+[31m-            }[m
+[31m-        ][m
+[32m+[m[32m        padding: 0[m
+ [m
+[31m-        AnimeContent {[m
+[32m+[m[32m        AnimeAppView {[m
+             anchors.fill: parent[m
+             backend: animeBackend[m
+             askToGrade: window.askToGrade[m
+             confirmUndo: window.confirmUndo[m
+[31m-            backgroundOpacity: window.backgroundOpacity[m
+             itemSpacing: window.itemSpacing[m
+             titleSize: window.titleSize[m
+             episodeSize: window.episodeSize[m
+             title: window.appTitle[m
+             emptyTitle: window.emptyTitle[m
+[32m+[m
+[32m+[m[32m            onSettingsRequested: settingsDialog.open()[m
+         }[m
+     }[m
+ }[m
