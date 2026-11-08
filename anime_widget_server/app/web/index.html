@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anime-Widget Server</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1c1f24; --muted:#5f6670; --accent:#2f6fed; --ok:#1f8a4c; --bad:#c23b3b; --line:#e2e5ea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111317; --card:#1b1e24; --fg:#e8eaee; --muted:#9aa1ab; --accent:#6a9bff; --ok:#4cc483; --bad:#ff7676; --line:#2b3038; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; padding:16px; }
+  main { max-width:640px; margin:0 auto; display:grid; gap:16px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  h1 { font-size:20px; margin:4px 0 0; } h2 { font-size:16px; margin:0 0 8px; }
+  .muted { color:var(--muted); } .ok { color:var(--ok); } .bad { color:var(--bad); }
+  code { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:6px 8px; display:block; word-break:break-all; font-size:13px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:8px 14px; font:inherit; cursor:pointer; }
+  input { width:100%; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; margin:8px 0; }
+  ol { padding-left:20px; margin:8px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Anime-Widget Server <span class="muted" id="ver"></span></h1>
+
+  <section>
+    <h2>MyAnimeList</h2>
+    <p id="malStatus" class="muted">Loading…</p>
+    <div id="login" hidden>
+      <ol>
+        <li><button id="startBtn" type="button">Open MAL login</button></li>
+        <li>Approve access. Your browser then tries to open a <em>localhost</em> page that won't load. That's expected.</li>
+        <li>Copy that page's full address and paste it here:
+          <input id="redirect" placeholder="http://localhost:8080/callback?code=…">
+          <button id="finishBtn" type="button">Finish login</button></li>
+      </ol>
+    </div>
+    <p id="authMsg"></p>
+  </section>
+
+  <section id="tokenBox" hidden>
+    <h2>API token for the PC client</h2>
+    <p class="muted">Put this in <b>~/.config/anime-todo/server.conf</b> as <b>API_TOKEN=…</b></p>
+    <code id="token"></code>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+async function api(path, opts) {
+  const r = await fetch("api/" + path, opts);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+async function load() {
+  try {
+    const info = await api("info");
+    $("ver").textContent = "v" + info.version;
+    if (!info.malClientIdSet) {
+      $("malStatus").innerHTML = '<span class="bad">No MAL client ID set.</span> Add it in the add-on\'s Configuration tab, then restart the add-on.';
+    } else if (info.mal.loggedIn) {
+      $("malStatus").innerHTML = '<span class="ok">Logged in.</span> The token refreshes itself automatically.';
+      $("login").hidden = false;
+      $("startBtn").textContent = "Log in again";
+    } else {
+      $("malStatus").innerHTML = '<span class="bad">Not logged in.</span>';
+      $("login").hidden = false;
+    }
+    if (info.apiToken) { $("token").textContent = info.apiToken; $("tokenBox").hidden = false; }
+  } catch (e) { $("malStatus").textContent = "Error: " + e.message; }
+}
+$("startBtn").onclick = async () => {
+  try { const { url } = await api("mal/auth/start", { method: "POST" }); window.open(url, "_blank"); }
+  catch (e) { $("authMsg").textContent = e.message; }
+};
+$("finishBtn").onclick = async () => {
+  try {
+    const r = await api("mal/auth/finish", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ redirectUrl: $("redirect").value }) });
+    $("authMsg").innerHTML = '<span class="ok">' + r.message + "</span>"; load();
+  } catch (e) { $("authMsg").innerHTML = '<span class="bad">' + e.message + "</span>"; }
+};
+load();
+</script>
+</body>
+</html>

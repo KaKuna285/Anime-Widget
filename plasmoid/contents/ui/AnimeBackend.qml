@@ -23,6 +23,13 @@ Item {
     property var lastRemoved: ({})
     property var batchWarnings: ({})
 
+    // Set when the server (Home Assistant add-on) can't be reached --
+    // the lists above then show the last known state, and new
+    // downloads wait in a local outbox until it's back.
+    property bool offline: false
+    property string offlineReason: ""
+    property int outboxCount: 0
+
     property string errorSource: ""
     property string errorMessage: ""
     property string lastShownError: ""
@@ -323,15 +330,24 @@ Item {
         refreshTimer.restart()
     }
 
+    // One round-trip fetches everything (episodes, history, series
+    // map, pending matches/grades, last removed, batch warnings).
     function refresh() {
-        executable.run(scriptPath + " list")
-        executable.run(scriptPath + " history")
-        executable.run(scriptPath + " pending")
-        executable.run(scriptPath + " series-map")
-        executable.run(scriptPath + " pending-grades")
-        executable.run(scriptPath + " last-removed")
-        executable.run(scriptPath + " batch-warnings")
+        executable.run(scriptPath + " state")
         executable.run(scriptPath + " get-config")
+    }
+
+    function applyState(state) {
+        backend.episodes = state.episodes || []
+        backend.history = state.history || []
+        backend.pendingMatches = state.pendingMatches || {}
+        backend.seriesMap = state.seriesMap || {}
+        backend.pendingGrades = state.pendingGrades || {}
+        backend.lastRemoved = state.lastRemoved || {}
+        backend.batchWarnings = state.batchWarnings || {}
+        backend.offline = !!state.offline
+        backend.offlineReason = state.offlineReason || ""
+        backend.outboxCount = state.outboxCount || 0
     }
 
     Plasma5Support.DataSource {
@@ -382,73 +398,11 @@ Item {
                 return
             }
 
-            if (source === backend.scriptPath + " list") {
-                var output = data["stdout"] || ""
+            if (source === backend.scriptPath + " state") {
                 try {
-                    backend.episodes = JSON.parse(output)
+                    backend.applyState(JSON.parse(data["stdout"] || "{}"))
                 } catch (error) {
-                    console.log("Failed to parse anime JSON:", error)
-                    backend.episodes = []
-                }
-            }
-
-            if (source === backend.scriptPath + " history") {
-                var historyOutput = data["stdout"] || ""
-                try {
-                    backend.history = JSON.parse(historyOutput)
-                } catch (error) {
-                    console.log("Failed to parse anime history JSON:", error)
-                    backend.history = []
-                }
-            }
-
-            if (source === backend.scriptPath + " pending") {
-                var pendingOutput = data["stdout"] || ""
-                try {
-                    backend.pendingMatches = JSON.parse(pendingOutput)
-                } catch (error) {
-                    console.log("Failed to parse pending matches JSON:", error)
-                    backend.pendingMatches = {}
-                }
-            }
-
-            if (source === backend.scriptPath + " series-map") {
-                var seriesMapOutput = data["stdout"] || ""
-                try {
-                    backend.seriesMap = JSON.parse(seriesMapOutput)
-                } catch (error) {
-                    console.log("Failed to parse series map JSON:", error)
-                    backend.seriesMap = {}
-                }
-            }
-
-            if (source === backend.scriptPath + " pending-grades") {
-                var pendingGradesOutput = data["stdout"] || ""
-                try {
-                    backend.pendingGrades = JSON.parse(pendingGradesOutput)
-                } catch (error) {
-                    console.log("Failed to parse pending grades JSON:", error)
-                    backend.pendingGrades = {}
-                }
-            }
-
-            if (source === backend.scriptPath + " last-removed") {
-                var lastRemovedOutput = data["stdout"] || ""
-                try {
-                    backend.lastRemoved = JSON.parse(lastRemovedOutput)
-                } catch (error) {
-                    console.log("Failed to parse last-removed JSON:", error)
-                    backend.lastRemoved = {}
-                }
-            }
-
-            if (source === backend.scriptPath + " batch-warnings") {
-                var batchWarningsOutput = data["stdout"] || ""
-                try {
-                    backend.batchWarnings = JSON.parse(batchWarningsOutput)
-                } catch (error) {
-                    console.log("Failed to parse batch warnings JSON:", error)
-                    backend.batchWarnings = {}
+                    console.log("Failed to parse anime state JSON:", error)
                 }
             }
 

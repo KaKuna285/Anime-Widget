@@ -14,43 +14,60 @@ Point qBittorrent's "run on torrent completion" hook at this project's script, a
 - **Undo** — reverses your most recent action, whether that was completing an episode or removing one from the list. Restores MAL state where relevant.
 - **Remove wrongly-queued entries** — right-click any episode to remove it from the list (e.g. a mis-parsed or duplicate entry).
 - **Resilient by design** — file locking prevents races between concurrent downloads, failures surface as visible error dialogs instead of failing silently, and the MAL OAuth token refreshes itself automatically so you won't need to re-authenticate every month.
-- **- **Real titles, not folder names** — once a series is matched, its entry in the widget shows the actual MAL title instead of the raw download folder name (with an optional setting to prefer the English title over the Japanese/romaji one).
+- **Real titles, not folder names** — once a series is matched, its entry in the widget shows the actual MAL title instead of the raw download folder name (with an optional setting to prefer the English title over the Japanese/romaji one).
+
+## How it fits together
+
+```
+qBittorrent hook ─┐                         ┌─ MyAnimeList API
+Plasma widget ────┼─ anime-client.py ──HTTP─┤  Anime-Widget Server
+Standalone app ───┤  (on the PC)            │  (Home Assistant add-on,
+Add-series tool ──┘                         │   SQLite in /data)
+                                 phone ─────┘  (web app: coming next)
+```
+
+The checklist, history, series mappings and MAL login live on the **Anime-Widget Server** add-on on Home Assistant. Every client on the PC goes through `anime-client.py` (still called as `anime-downloaded.sh`, so the qBittorrent hook is unchanged). Filename parsing, the anime-root filter and the library-link script still run on the PC, because they need the files.
+
+If the server is unreachable, the widget shows the last known list with a disconnected icon. New downloads wait in a local outbox and are sent automatically once the server is back.
 
 ## Requirements
 
 - KDE Plasma 6
 - Python 3
-- [inotify-tools](https://github.com/inotify-tools/inotify-tools) (optional, but strongly recommended) — lets the widget update instantly when a new episode arrives, instead of waiting on a periodic timer. `install.sh` will detect if it's missing and offer to install it for you.
-- A MyAnimeList account and a registered [MAL API application](https://myanimelist.net/apiconfig) (free, takes a couple of minutes) to get a Client ID for OAuth.
+- Home Assistant OS/Supervised (for the add-on)
+- A MyAnimeList account and a registered [MAL API application](https://myanimelist.net/apiconfig) (free, takes a couple of minutes) for the Client ID. App type "other", redirect URI `http://localhost:8080/callback`.
 
 ## Installation
 
-1. Clone the repo:
+### 1. The server (Home Assistant)
+
+1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add `https://github.com/KaKuna285/Anime-Widget`. Then install **Anime-Widget Server**.
+   (Or copy the `anime_widget_server` folder into HA's `/addons` share and install it from "Local add-ons".)
+2. In the add-on's **Configuration** tab, set `mal_client_id`. Start the add-on.
+3. Open the add-on's web UI (the **Anime** sidebar entry) and copy the **API token**.
+
+### 2. The PC
+
 ```bash
-   git clone https://github.com/KaKuna285/Anime-Widget.git
-   cd Anime-Widget
+git clone https://github.com/KaKuna285/Anime-Widget.git
+cd Anime-Widget
+./install.sh
 ```
 
-2. Create your MAL API credentials file:
-```bash
-   mkdir -p ~/.config/anime-todo
-   echo "CLIENT_ID=your_mal_client_id_here" > ~/.config/anime-todo/mal.conf
-```
-   (Get a Client ID by registering an app at [myanimelist.net/apiconfig](https://myanimelist.net/apiconfig) — app type "other", redirect URI `http://localhost:8080/callback`.)
+The installer deploys the scripts to `~/.local/bin/` and asks for the server URL (e.g. `http://192.168.1.20:8099`) and the API token. It saves them in `~/.config/anime-todo/server.conf`. Then it installs the widget and/or standalone app.
 
-3. Run the installer:
-```bash
-   ./install.sh
-```
-   This deploys the scripts to `~/.local/bin/`, installs the Plasma widget itself, and offers to install `inotify-tools` if it's not already present.
+Check the connection:
 
-4. Authenticate with MyAnimeList:
 ```bash
-   ~/.local/bin/anime-mal-auth.py
+~/.local/bin/anime-client.py info
 ```
-   This opens your browser for MAL login/authorization and saves a token to `~/.config/anime-todo/mal-token.json`. You only need to do this once — the token refreshes itself automatically from then on.
 
-5. Add the widget to your panel or desktop: right-click → **Add Widgets** → search for "Anime-Widget"
+### 3. MyAnimeList login
+
+- **Coming from the old local version?** Run `~/.local/bin/anime-client.py migrate` once. It uploads your existing list, history, series mappings and MAL token to the server.
+- **Fresh install:** log in from the add-on's web UI. Click "Open MAL login", approve, then paste back the `localhost` address your browser lands on.
+
+Add the widget to your panel: right-click → **Add Widgets** → "Anime-Widget".
 
 ## Connecting qBittorrent
 
@@ -91,7 +108,14 @@ Right-click the widget → **Configure**:
 
 | What | Where |
 |---|---|
-| Deployed scripts | `~/.local/bin/anime-*.sh`, `~/.local/bin/anime-*.py` |
-| Widget data (checklist, history, mappings) | `~/.local/share/anime-*.json` |
-| MAL credentials & token | `~/.config/anime-todo/` |
-| Diagnostic log | `~/.local/share/anime-mal.log` (self-trimming, capped at ~1MB) |
+| Checklist, history, series mappings | Home Assistant add-on: `/data/anime.db` (in HA backups) |
+| MAL token | Home Assistant add-on: `/data/mal-token.json` |
+| Server log | Add-on **Log** tab, plus `/data/anime-server.log` |
+| Deployed PC scripts | `~/.local/bin/anime-*` |
+| Server address + API token | `~/.config/anime-todo/server.conf` |
+| Anime root filter | `~/.config/anime-todo/anime-todo.conf` |
+| Offline cache / outbox | `~/.cache/anime-todo/state.json`, `~/.local/share/anime-todo-outbox.json` |
+
+## Development
+
+`python3 tests/e2e-test.py` runs the real server and client against a fake MyAnimeList in a temp dir. It never touches your real data.

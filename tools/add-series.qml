@@ -23,8 +23,6 @@ Kirigami.ApplicationWindow {
 
     property string scriptPath: "$HOME/.local/bin/anime-downloaded.sh"
     property string rssHelperPath: "$HOME/.local/bin/anime-rss-helper.py"
-    property string malUpdatePath: "$HOME/.local/bin/anime-mal-update.py"
-    property string malSearchPath: "$HOME/.local/bin/anime-mal-search.py"
     property string prefsScriptPath: "$HOME/.local/bin/anime-gui-prefs.sh"
 
     property string mode: "season"
@@ -223,7 +221,7 @@ Kirigami.ApplicationWindow {
                 window.loadingSeason = true
 
                 executable.run(
-                    window.malSearchPath + " --season " + window.seasonSort
+                    window.scriptPath + " mal-season " + window.seasonSort
                 )
 
                 return
@@ -254,7 +252,7 @@ Kirigami.ApplicationWindow {
                 return
             }
 
-            if (source.indexOf("--list plan_to_watch") !== -1) {
+            if (source.indexOf("mal-list plan_to_watch") !== -1) {
                 window.loadingPlanToWatch = false
 
                 if (exitCode !== 0) {
@@ -284,7 +282,7 @@ Kirigami.ApplicationWindow {
                 return
             }
 
-            if (source.indexOf("--season") !== -1) {
+            if (source.indexOf("mal-season") !== -1) {
                 window.loadingSeason = false
 
                 if (exitCode !== 0) {
@@ -406,7 +404,7 @@ Kirigami.ApplicationWindow {
         executable.run(prefsScriptPath + " add-series-prefs.json get")
 
         window.loadingPlanToWatch = true
-        executable.run(malUpdatePath + " --list plan_to_watch")
+        executable.run(scriptPath + " mal-list plan_to_watch")
     }
 
     Controls.Dialog {
@@ -531,7 +529,7 @@ Kirigami.ApplicationWindow {
                         window.invalidateMatchCheck()
 
                         executable.run(
-                            window.malUpdatePath + " --list plan_to_watch"
+                            window.scriptPath + " mal-list plan_to_watch"
                         )
                     }
                 }
@@ -565,7 +563,7 @@ Kirigami.ApplicationWindow {
                             window.invalidateMatchCheck()
 
                             executable.run(
-                                window.malSearchPath + " --season " + window.seasonSort
+                                window.scriptPath + " mal-season " + window.seasonSort
                             )
                         }
                     }
@@ -581,7 +579,7 @@ Kirigami.ApplicationWindow {
                             window.invalidateMatchCheck()
 
                             executable.run(
-                                window.malSearchPath + " --season " + window.seasonSort
+                                window.scriptPath + " mal-season " + window.seasonSort
                             )
                         }
                     }

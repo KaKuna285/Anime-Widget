@@ -8,45 +8,30 @@ echo "Installing Anime-Widget"
 
 mkdir -p "$BIN_DIR"
 
-check_inotify_tools() {
-    if command -v inotifywait >/dev/null 2>&1; then
+setup_server_conf() {
+    local conf="$HOME/.config/anime-todo/server.conf"
+
+    if [ -f "$conf" ]; then
         return
     fi
 
     echo ""
-    echo "inotify-tools is not installed."
-    echo "It's optional -- without it, the widget falls back to polling"
-    echo "every few seconds instead of updating instantly when a new"
-    echo "episode is added or a background search finishes."
-    echo ""
+    echo "Anime-Widget now keeps its list on the Home Assistant add-on."
+    echo "You'll find the API token on the add-on's web page in Home Assistant."
 
-    read -p "Install it now? [y/N] " -n 1 -r
-    echo ""
-
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Skipping -- the widget will still work, just with slightly delayed updates."
+    if [ ! -t 0 ]; then
+        echo "Create $conf with SERVER_URL=... and API_TOKEN=... before using the widget."
         return
     fi
 
-    if command -v pacman >/dev/null 2>&1; then
-        sudo pacman -S --needed inotify-tools
-    elif command -v apt >/dev/null 2>&1; then
-        sudo apt install -y inotify-tools
-    elif command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y inotify-tools
-    elif command -v zypper >/dev/null 2>&1; then
-        sudo zypper install -y inotify-tools
-    else
-        echo "Couldn't detect a supported package manager (pacman/apt/dnf/zypper)."
-        echo "Please install inotify-tools manually if you'd like instant updates."
-        return
-    fi
+    read -p "Server URL [http://homeassistant.local:8099]: " -r SERVER_URL
+    SERVER_URL="${SERVER_URL:-http://homeassistant.local:8099}"
+    read -p "API token: " -r API_TOKEN
 
-    if command -v inotifywait >/dev/null 2>&1; then
-        echo "inotify-tools installed successfully."
-    else
-        echo "Installation may have failed -- the widget will fall back to polling."
-    fi
+    mkdir -p "$(dirname "$conf")"
+    printf 'SERVER_URL=%s\nAPI_TOKEN=%s\n' "$SERVER_URL" "$API_TOKEN" > "$conf"
+    chmod 600 "$conf"
+    echo "Saved $conf"
 }
 
 choose_install_mode() {
@@ -75,28 +60,21 @@ choose_install_mode() {
     esac
 }
 
-check_inotify_tools
 choose_install_mode
 
-cp "$SCRIPT_DIR/scripts/anime-downloaded.sh" "$BIN_DIR/anime-downloaded.sh"
-cp "$SCRIPT_DIR/scripts/anime-mal-auth.py" "$BIN_DIR/anime-mal-auth.py"
-cp "$SCRIPT_DIR/scripts/anime-mal-update.py" "$BIN_DIR/anime-mal-update.py"
-cp "$SCRIPT_DIR/scripts/anime-mal-search.py" "$BIN_DIR/anime-mal-search.py"
-cp "$SCRIPT_DIR/scripts/anime-parse-episode.py" "$BIN_DIR/anime-parse-episode.py"
-cp "$SCRIPT_DIR/scripts/anime-watch-changes.sh" "$BIN_DIR/anime-watch-changes.sh"
-cp "$SCRIPT_DIR/scripts/anime-mal-details.py" "$BIN_DIR/anime-mal-details.py"
-cp "$SCRIPT_DIR/scripts/anime-rss-helper.py" "$BIN_DIR/anime-rss-helper.py"
-cp "$SCRIPT_DIR/scripts/anime-gui-prefs.sh" "$BIN_DIR/anime-gui-prefs.sh"
+for f in anime-downloaded.sh anime-client.py anime-parse-episode.py \
+         anime-watch-changes.sh anime-rss-helper.py anime-gui-prefs.sh; do
+    cp "$SCRIPT_DIR/scripts/$f" "$BIN_DIR/$f"
+    chmod +x "$BIN_DIR/$f"
+done
 
-chmod +x "$BIN_DIR/anime-downloaded.sh"
-chmod +x "$BIN_DIR/anime-mal-auth.py"
-chmod +x "$BIN_DIR/anime-mal-update.py"
-chmod +x "$BIN_DIR/anime-mal-search.py"
-chmod +x "$BIN_DIR/anime-parse-episode.py"
-chmod +x "$BIN_DIR/anime-watch-changes.sh"
-chmod +x "$BIN_DIR/anime-mal-details.py"
-chmod +x "$BIN_DIR/anime-rss-helper.py"
-chmod +x "$BIN_DIR/anime-gui-prefs.sh"
+# MAL access moved to the server add-on -- remove the old local scripts
+# so nothing keeps using a stale local token by accident.
+for f in anime-mal-auth.py anime-mal-update.py anime-mal-search.py anime-mal-details.py; do
+    rm -f "$BIN_DIR/$f"
+done
+
+setup_server_conf
 
 DESKTOP_DIR="$HOME/.local/share/applications"
 mkdir -p "$DESKTOP_DIR"
