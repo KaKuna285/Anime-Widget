@@ -25,7 +25,7 @@ from mal import MalClient, MalError  # noqa: E402
 from ops import OpError, Ops  # noqa: E402
 from store import Store  # noqa: E402
 
-VERSION = "0.1.2"
+VERSION = "0.2.0"
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 OPTIONS_FILE = os.environ.get("OPTIONS_FILE", os.path.join(DATA_DIR, "options.json"))
 PORT = int(os.environ.get("PORT", "8099"))
@@ -152,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "version": VERSION, "rev": STORE.rev})
 
         if not path.startswith("/api/"):
-            return self._static(path)
+            return self._static(parsed.path)
 
         if not self._authorized():
             return self._send(401, {"error": "Unauthorized -- check API_TOKEN in server.conf."})
@@ -175,15 +175,23 @@ class Handler(BaseHTTPRequestHandler):
             self._send(500, {"error": f"Server error: {e}"})
 
     def _static(self, path):
-        if path == "/":
-            path = "/index.html"
-
-        rel = os.path.normpath(path.lstrip("/"))
+        rel = os.path.normpath(path.lstrip("/")) if path.strip("/") else ""
 
         if rel.startswith(".."):
             return self._send(404, {"error": "Not found"})
 
         full = os.path.join(WEB_DIR, rel)
+
+        if os.path.isdir(full):
+            if not path.endswith("/"):
+                # Relative redirect so it also works behind HA ingress.
+                self.send_response(301)
+                self.send_header("Location", os.path.basename(path.rstrip("/")) + "/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+
+            full = os.path.join(full, "index.html")
 
         if not os.path.isfile(full):
             return self._send(404, {"error": "Not found"})
@@ -354,6 +362,70 @@ ROUTES = {
 }
 
 
+HA_CONFIG_DIR = os.environ.get("HA_CONFIG_DIR", "/homeassistant")
+PHONE_APP_DIR = os.path.join(WEB_DIR, "app")
+
+
+def supervisor_self_info():
+    """The add-on's own info (slug, ingress URL) from the Supervisor API."""
+    token = os.environ.get("SUPERVISOR_TOKEN")
+
+    if not token:
+        return None
+
+    import urllib.request
+
+    req = urllib.request.Request(
+        "http://supervisor/addons/self/info",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return json.load(response).get("data") or {}
+    except Exception as e:
+        log(f"Could not read add-on info from the Supervisor: {e}")
+        return None
+
+
+def deploy_phone_app():
+    """Copy the phone web app into HA's www folder (served at /local/).
+
+    This is what lets the page live on Home Assistant's own https
+    address (e.g. your Tailscale ts.net name) like your dashboard does.
+    config.json tells the page which ingress URL reaches this add-on.
+    """
+    import shutil
+
+    if not OPTIONS.get("deploy_web_app", True):
+        return
+
+    if not os.path.isdir(HA_CONFIG_DIR):
+        log(f"{HA_CONFIG_DIR} not mounted -- skipping phone app deploy.")
+        return
+
+    target = os.path.join(HA_CONFIG_DIR, "www", "anime-widget")
+    info = supervisor_self_info() or {}
+
+    try:
+        if os.path.isdir(target):
+            shutil.rmtree(target)
+
+        shutil.copytree(PHONE_APP_DIR, target)
+
+        with open(os.path.join(target, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "slug": info.get("slug"),
+                "ingressUrl": info.get("ingress_url"),
+                "version": VERSION,
+            }, f, indent=2)
+
+        log(f"Phone app deployed: open /local/anime-widget/index.html on your Home Assistant address "
+            f"(ingress: {info.get('ingress_url')})")
+    except OSError as e:
+        log(f"Could not deploy the phone app to {target}: {e}")
+
+
 def main():
     log(f"Anime-Widget server {VERSION} starting on port {PORT} (data: {DATA_DIR}, rev {STORE.rev})")
 
@@ -361,6 +433,7 @@ def main():
         log("WARNING: mal_client_id is not set -- MAL features will fail until it is.")
 
     OPS.resume_interrupted_searches()
+    deploy_phone_app()
 
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     server.daemon_threads = True

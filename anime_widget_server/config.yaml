@@ -1,5 +1,5 @@
 name: Anime-Widget Server
-version: "0.1.2"
+version: "0.2.0"
 slug: anime_widget_server
 description: Shared episode checklist + MyAnimeList sync for the Anime-Widget desktop widget, app and phone.
 url: https://github.com/KaKuna285/Anime-Widget
@@ -13,13 +13,19 @@ ingress: true
 ingress_port: 8099
 panel_icon: mdi:television-play
 panel_title: Anime
+hassio_api: true
+map:
+  - type: homeassistant_config
+    read_only: false
 ports:
   8099/tcp: 8099
 ports_description:
-  8099/tcp: API for the desktop widget/app (and later the phone web app)
+  8099/tcp: API for the desktop widget and app
 options:
   mal_client_id: ""
   api_token: ""
+  deploy_web_app: true
 schema:
   mal_client_id: str?
   api_token: password?
+  deploy_web_app: bool?

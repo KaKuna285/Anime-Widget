@@ -19,11 +19,11 @@ Point qBittorrent's "run on torrent completion" hook at this project's script, a
 ## How it fits together
 
 ```
-qBittorrent hook ─┐                         ┌─ MyAnimeList API
-Plasma widget ────┼─ anime-client.py ──HTTP─┤  Anime-Widget Server
-Standalone app ───┤  (on the PC)            │  (Home Assistant add-on,
-Add-series tool ──┘                         │   SQLite in /data)
-                                 phone ─────┘  (web app: coming next)
+qBittorrent hook ─┐                          ┌─ MyAnimeList API
+Plasma widget ────┼─ anime-client.py ──HTTP──┤  Anime-Widget Server
+Standalone app ───┤  (on the PC)             │  (Home Assistant add-on,
+Add-series tool ──┘                          │   SQLite in /data)
+Phone web app ── HA /local page ── HA ingress┘
 ```
 
 The checklist, history, series mappings and MAL login live on the **Anime-Widget Server** add-on on Home Assistant. Every client on the PC goes through `anime-client.py` (still called as `anime-downloaded.sh`, so the qBittorrent hook is unchanged). Filename parsing, the anime-root filter and the library-link script still run on the PC, because they need the files.
@@ -68,6 +68,10 @@ Check the connection:
 - **Fresh install:** log in from the add-on's web UI. Click "Open MAL login", approve, then paste back the `localhost` address your browser lands on.
 
 Add the widget to your panel: right-click → **Add Widgets** → "Anime-Widget".
+
+### 4. Phone
+
+Open `https://<your-ha-address>/local/anime-widget/index.html` (the add-on puts it there) and log in with your HA admin account. Then choose "Install app" / "Add to home screen". It does everything the widget does: tick, undo, remove, delete series, rate, and match series to MAL. Changes appear live on every device.
 
 ## Connecting qBittorrent
 

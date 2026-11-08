@@ -19,6 +19,7 @@
   button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:8px 14px; font:inherit; cursor:pointer; }
   input { width:100%; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; margin:8px 0; }
   ol { padding-left:20px; margin:8px 0; }
+  a { color:var(--accent); }
 </style>
 </head>
 <body>
@@ -38,6 +39,12 @@
       </ol>
     </div>
     <p id="authMsg"></p>
+  </section>
+
+  <section>
+    <h2>Phone app</h2>
+    <p class="muted">Open <b>/local/anime-widget/index.html</b> on your Home Assistant address (e.g. your Tailscale https name), the same way you open your dashboard. Then choose "Install app" / "Add to home screen".</p>
+    <p><a href="app/">Open it here</a></p>
   </section>
 
   <section id="tokenBox" hidden>
