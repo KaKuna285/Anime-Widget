@@ -42,6 +42,23 @@ ColumnLayout {
                 text: view.backend.episodes.length > 0 ? view.title : view.emptyTitle
             }
 
+            // Shown when the server (Home Assistant add-on) can't be
+            // reached -- the list is then the last known state, and
+            // new downloads wait in a local outbox.
+            Controls.Button {
+                visible: view.backend.offline
+                icon.name: "network-disconnect"
+                icon.color: Kirigami.Theme.negativeTextColor
+                text: view.backend.outboxCount > 0
+                      ? i18n("Offline (%1 queued)", view.backend.outboxCount)
+                      : i18n("Offline")
+                display: Controls.Button.TextBesideIcon
+                flat: true
+                Controls.ToolTip.visible: hovered
+                Controls.ToolTip.text: i18n("Server unreachable -- showing the last known list.") +
+                    "\n\n" + view.backend.offlineReason
+            }
+
             Controls.Button {
                 icon.name: "view-list-details"
                 text: i18n("Manage Series")
@@ -93,6 +110,22 @@ ColumnLayout {
                         font.bold: true
                         font.pixelSize: view.titleSize
                         wrapMode: Text.WordWrap
+
+                        MouseArea {
+                            anchors.fill: parent
+                            acceptedButtons: Qt.RightButton
+                            onClicked: seriesContextMenu.popup()
+                        }
+
+                        Controls.Menu {
+                            id: seriesContextMenu
+
+                            Controls.MenuItem {
+                                text: i18n("Delete Series")
+                                icon.name: "edit-delete"
+                                onTriggered: dialogs.requestRemoveSeries(group)
+                            }
+                        }
                     }
 
                     Kirigami.Separator {

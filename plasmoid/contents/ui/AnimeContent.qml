@@ -29,7 +29,12 @@ Item {
 
     function nextPendingSeries() {
         for (var key in content.backend.pendingMatches) {
-            if (content.backend.pendingMatches[key].status === "ready") {
+            var status = content.backend.pendingMatches[key].status
+
+            // Also prompt when the search found nothing or failed, so
+            // the series can still be matched by hand (manual search
+            // or MAL ID) instead of silently sitting unmatched.
+            if (status === "ready" || status === "no_results" || status === "error") {
                 return key
             }
         }
@@ -81,6 +86,13 @@ Item {
         seriesMatchDialog.displayLabel = content.backend.pendingMatches[key].query || key
         seriesMatchDialog.candidates = content.backend.pendingMatches[key].candidates || []
         seriesMatchDialog.open()
+    }
+
+    function requestRemoveSeries(group) {
+        removeSeriesDialog.seriesKey = group.seriesKey
+        removeSeriesDialog.seriesLabel = group.label
+        removeSeriesDialog.episodeCount = group.episodes.length
+        removeSeriesDialog.open()
     }
 
     function confirmActiveSeries(malId, title) {
@@ -228,7 +240,24 @@ Item {
             ? content.backend.pendingMatches[content.activeSeriesKey].status === "searching"
             : false
 
-        onOpened: selectedId = -1
+        readonly property var activeEntry: content.backend.pendingMatches[content.activeSeriesKey] || null
+        readonly property string matchStatus: activeEntry ? activeEntry.status : ""
+        readonly property string statusText: matchStatus === "no_results"
+            ? i18n("No MyAnimeList results for \"%1\". Try another search, or enter the MAL ID below.", activeEntry.query || "")
+            : matchStatus === "error"
+                ? i18n("MAL search failed: %1", activeEntry.error || "")
+                : ""
+
+        // Accepts a bare ID or a pasted myanimelist.net/anime/<id>/... URL.
+        function parseMalId(text) {
+            var m = text.match(/anime\/(\d+)/) || text.match(/^\s*(\d+)\s*$/)
+            return m ? parseInt(m[1]) : -1
+        }
+
+        onOpened: {
+            selectedId = -1
+            matchIdField.text = ""
+        }
 
         contentItem: ColumnLayout {
             spacing: Kirigami.Units.smallSpacing
@@ -237,6 +266,16 @@ Item {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: i18n("Which anime is \"%1\"?", seriesMatchDialog.displayLabel)
+            }
+
+            Controls.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                visible: text !== ""
+                color: seriesMatchDialog.matchStatus === "error"
+                       ? Kirigami.Theme.negativeTextColor
+                       : Kirigami.Theme.disabledTextColor
+                text: seriesMatchDialog.statusText
             }
 
             RowLayout {
@@ -267,7 +306,8 @@ Item {
 
             ListView {
                 Layout.fillWidth: true
-                Layout.preferredHeight: Kirigami.Units.gridUnit * 16
+                Layout.preferredHeight: seriesMatchDialog.candidates.length > 0 ? Kirigami.Units.gridUnit * 16 : 0
+                visible: seriesMatchDialog.candidates.length > 0
                 clip: true
                 model: seriesMatchDialog.candidates
                 spacing: Kirigami.Units.smallSpacing
@@ -306,6 +346,34 @@ Item {
                                 text: [modelData.mediaType, modelData.startYear].filter(x => x).join(" \u2022 ")
                             }
                         }
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.smallSpacing
+
+                Controls.Label {
+                    text: i18n("Or MAL ID:")
+                }
+
+                Controls.TextField {
+                    id: matchIdField
+                    Layout.fillWidth: true
+                    placeholderText: i18n("ID or myanimelist.net/anime/... link")
+                    Keys.onReturnPressed: useIdButton.clicked()
+                }
+
+                Controls.Button {
+                    id: useIdButton
+                    text: i18n("Use ID")
+                    enabled: seriesMatchDialog.parseMalId(matchIdField.text) > 0
+
+                    onClicked: {
+                        // Empty title: the server fills in MAL's own title.
+                        content.confirmActiveSeries(seriesMatchDialog.parseMalId(matchIdField.text), "")
+                        seriesMatchDialog.close()
                     }
                 }
             }
@@ -701,6 +769,45 @@ Item {
     Layout.preferredWidth: Kirigami.Units.gridUnit * 22
     Layout.preferredHeight: Kirigami.Units.gridUnit * 14
 
+    Controls.Dialog {
+        id: removeSeriesDialog
+
+        property string seriesKey: ""
+        property string seriesLabel: ""
+        property int episodeCount: 0
+
+        modal: true
+        parent: Controls.Overlay.overlay
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
+        width: Math.min(parent.width - Kirigami.Units.gridUnit * 2, Kirigami.Units.gridUnit * 20)
+        title: i18n("Delete series?")
+
+        contentItem: Controls.Label {
+            wrapMode: Text.WordWrap
+            text: i18n("Remove all %1 episode(s) of \"%2\" from the list? MyAnimeList isn't changed, and Undo brings them back.",
+                       removeSeriesDialog.episodeCount, removeSeriesDialog.seriesLabel)
+        }
+
+        footer: Controls.DialogButtonBox {
+            Controls.Button {
+                text: i18n("Cancel")
+                Controls.DialogButtonBox.buttonRole: Controls.DialogButtonBox.RejectRole
+                onClicked: removeSeriesDialog.close()
+            }
+
+            Controls.Button {
+                text: i18n("Delete Series")
+                icon.name: "edit-delete"
+                Controls.DialogButtonBox.buttonRole: Controls.DialogButtonBox.AcceptRole
+                onClicked: {
+                    content.backend.removeSeries(removeSeriesDialog.seriesKey, removeSeriesDialog.seriesLabel)
+                    removeSeriesDialog.close()
+                }
+            }
+        }
+    }
+
     ColumnLayout {
         id: verticalLayout
 
@@ -800,6 +907,22 @@ Item {
                     font.pixelSize: content.episodeSize
                     color: Kirigami.Theme.textColor
                     Layout.fillWidth: true
+
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.RightButton
+                        onClicked: seriesContextMenu.popup()
+                    }
+
+                    Controls.Menu {
+                        id: seriesContextMenu
+
+                        Controls.MenuItem {
+                            text: i18n("Delete Series")
+                            icon.name: "edit-delete"
+                            onTriggered: content.requestRemoveSeries(group)
+                        }
+                    }
                 }
 
                 Repeater {

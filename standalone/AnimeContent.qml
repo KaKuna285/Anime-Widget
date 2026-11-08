@@ -732,6 +732,17 @@ Item {
                 spacing: 0
 
                 Controls.ToolButton {
+                    visible: content.backend.offline
+                    icon.name: "network-disconnect"
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.text: i18n("Server unreachable -- showing the last known list.") +
+                        (content.backend.outboxCount > 0
+                            ? "\n" + i18n("%1 download(s) waiting to be sent.", content.backend.outboxCount)
+                            : "") +
+                        "\n\n" + content.backend.offlineReason
+                }
+
+                Controls.ToolButton {
                     icon.name: "configure"
                     onClicked: manageSeriesDialog.open()
                     Controls.ToolTip.visible: hovered

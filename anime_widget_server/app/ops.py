@@ -246,18 +246,27 @@ class Ops:
             episodes = self.store.get("episodes")
 
             if undo_removal:
-                entry = dict(last_removed)
-                entry.pop("removedAt", None)
+                # A whole-series removal stores its episodes under
+                # "items"; a single removal is the episode itself.
+                restore = last_removed.get("items") or [last_removed]
 
-                if not any(
-                    _same_episode(x, entry.get("series"), entry.get("kind", "episode"),
-                                  entry.get("season"), entry.get("episode"))
-                    for x in episodes
-                ):
-                    episodes.append(entry)
+                for raw in restore:
+                    entry = dict(raw)
+                    entry.pop("removedAt", None)
+
+                    if not any(
+                        _same_episode(x, entry.get("series"), entry.get("kind", "episode"),
+                                      entry.get("season"), entry.get("episode"))
+                        for x in episodes
+                    ):
+                        episodes.append(entry)
 
                 self.store.commit({"episodes": episodes, "lastRemoved": {}})
-                return {"message": f"Restored removed episode: {_ep_code(entry)}"}
+
+                if "items" in last_removed:
+                    return {"message": f"Restored {len(restore)} episode(s) of {last_removed.get('label') or last_removed.get('seriesKey')}"}
+
+                return {"message": f"Restored removed episode: {_ep_code(restore[0])}"}
 
             item = history[-1]
 
@@ -308,6 +317,31 @@ class Ops:
 
         return {"message": f"Removed {_ep_code(removed)}"}
 
+    def remove_series(self, series_key, label=None):
+        """Remove every listed episode of one series (undoable as one action).
+
+        The MAL mapping is kept, so future downloads still match.
+        """
+        with self.store.op_lock:
+            episodes = self.store.get("episodes")
+            removed = [x for x in episodes if _key_of(x) == series_key]
+
+            if not removed:
+                return {"message": "No episodes of that series in the list -- nothing removed."}
+
+            remaining = [x for x in episodes if _key_of(x) != series_key]
+            self.store.commit({
+                "episodes": remaining,
+                "lastRemoved": {
+                    "removedAt": _now(),
+                    "seriesKey": series_key,
+                    "label": label or series_key,
+                    "items": removed,
+                },
+            })
+
+        return {"message": f"Removed {len(removed)} episode(s) of {label or series_key}"}
+
     # ---- series mapping -------------------------------------------
 
     def confirm_series(self, series_key, mal_id, title=None):
@@ -321,6 +355,9 @@ class Ops:
             # the episode count (no grade prompt) or English title.
             self.log(f"Could not fetch details for MAL {mal_id}: {e}")
 
+        # A bare MAL ID (no title) gets MAL's own title.
+        title = title or details.get("title") or series_key
+
         with self.store.op_lock:
             series_map = self.store.get("seriesMap")
             pending = self.store.get("pendingMatches")
@@ -328,7 +365,7 @@ class Ops:
 
             series_map[series_key] = {
                 "malId": mal_id,
-                "title": title or series_key,
+                "title": title,
                 "englishTitle": details.get("englishTitle"),
                 "numEpisodes": details.get("numEpisodes"),
                 "picture": details.get("picture"),
@@ -342,7 +379,7 @@ class Ops:
 
             self.store.commit({"seriesMap": series_map, "pendingMatches": pending, "episodes": episodes})
 
-        return {"message": f"Mapped '{series_key}' -> MAL {mal_id} ({title or series_key})"}
+        return {"message": f"Mapped '{series_key}' -> MAL {mal_id} ({title})"}
 
     def skip_series(self, series_key):
         with self.store.op_lock:

@@ -231,6 +231,18 @@ Item {
         refreshTimer.restart()
     }
 
+    // Removes every listed episode of one series in a single,
+    // undoable step. The MAL match is kept for future downloads.
+    function removeSeries(seriesKey, label) {
+        executable.run(
+            scriptPath + " remove-series " +
+            JSON.stringify(seriesKey) + " " +
+            JSON.stringify(label || seriesKey)
+        )
+
+        refreshTimer.restart()
+    }
+
     function openContainingFolder(episode) {
         var path = episode.path
         var lastSlash = path.lastIndexOf("/")

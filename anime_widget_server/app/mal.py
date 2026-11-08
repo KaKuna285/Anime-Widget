@@ -385,6 +385,7 @@ class MalClient:
     def details(self, mal_id):
         data = self.public_request(f"{API}/anime/{mal_id}?fields=num_episodes,alternative_titles,main_picture")
         return {
+            "title": data.get("title"),
             "numEpisodes": data.get("num_episodes") or None,
             "englishTitle": (data.get("alternative_titles") or {}).get("en") or None,
             "picture": (data.get("main_picture") or {}).get("medium"),

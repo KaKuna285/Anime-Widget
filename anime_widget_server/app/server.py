@@ -25,7 +25,7 @@ from mal import MalClient, MalError  # noqa: E402
 from ops import OpError, Ops  # noqa: E402
 from store import Store  # noqa: E402
 
-VERSION = "0.1.0"
+VERSION = "0.1.2"
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 OPTIONS_FILE = os.environ.get("OPTIONS_FILE", os.path.join(DATA_DIR, "options.json"))
 PORT = int(os.environ.get("PORT", "8099"))
@@ -259,6 +259,11 @@ def r_remove(h, body, q):
     return OPS.remove_episode(series, body.get("kind") or "episode", season, episode)
 
 
+def r_remove_series(h, body, q):
+    (key,) = need(body, "seriesKey")
+    return OPS.remove_series(key, body.get("label"))
+
+
 def r_confirm(h, body, q):
     key, mal_id = need(body, "seriesKey", "malId")
     return OPS.confirm_series(key, mal_id, body.get("title"))
@@ -334,6 +339,7 @@ ROUTES = {
     ("POST", "/api/done"): r_done,
     ("POST", "/api/undo"): r_undo,
     ("POST", "/api/remove"): r_remove,
+    ("POST", "/api/remove-series"): r_remove_series,
     ("POST", "/api/series/confirm"): r_confirm,
     ("POST", "/api/series/skip"): r_skip,
     ("POST", "/api/series/remap"): r_remap,

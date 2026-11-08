@@ -98,7 +98,7 @@ class MalHandler(BaseHTTPRequestHandler):
                     node["my_list_status"] = MAL.lists[mid]
                 return self._send(200, node)
             c = MAL.catalog[mid]
-            return self._send(200, {"id": mid, "num_episodes": c["eps"], "alternative_titles": {"en": c["en"]},
+            return self._send(200, {"id": mid, "title": c["title"], "num_episodes": c["eps"], "alternative_titles": {"en": c["en"]},
                                     "main_picture": {"medium": f"pic{mid}"}})
         if parts[:4] == ["v2", "users", "@me", "animelist"]:
             st = q["status"][0]
@@ -336,6 +336,31 @@ def main():
         e.run("remap-series", "Something", "Dandadan")
         s = e.wait_for(lambda s: s["pendingMatches"].get("Something", {}).get("status") == "ready", "remap")
         check("remap runs custom query", s["pendingMatches"]["Something"]["query"] == "Dandadan")
+
+        # -- no search results -> "no_results" (the widget prompts for these too)
+        e.run("[Test] Zzz Nothing - 01.mkv", "/x/z01.mkv", os.path.join(anime, "Zzz Nothing"), "")
+        e.wait_for(lambda s: s["pendingMatches"].get("Zzz Nothing", {}).get("status") == "no_results", "no_results")
+        check("search with no hits is recorded as no_results", True)
+
+        # -- confirming by bare MAL ID stores MAL's own title
+        e.run("confirm-series", "Zzz Nothing", "303", "")
+        s = e.state()
+        check("ID-only confirm uses MAL title",
+              s["seriesMap"]["Zzz Nothing"]["title"] == "Dandadan Movie" and "Zzz Nothing" not in s["pendingMatches"])
+
+        # -- delete a whole series, then undo brings it all back
+        e.run("[SubsPlease] Dandadan - 07 (1080p).mkv", "/x/d07.mkv", os.path.join(anime, "Dandadan"), "")
+        before = [x for x in e.state()["episodes"] if x["seriesKey"] == "Dandadan"]
+        time.sleep(1.1)
+        e.run("remove-series", "Dandadan", "Dandadan")
+        s = e.state()
+        check("remove-series clears all its episodes but keeps the MAL mapping",
+              len(before) >= 2 and not any(x["seriesKey"] == "Dandadan" for x in s["episodes"])
+              and s["seriesMap"]["Dandadan"]["malId"] == 202)
+        e.run("undo")
+        s = e.state()
+        check("undo restores every episode of the removed series",
+              len([x for x in s["episodes"] if x["seriesKey"] == "Dandadan"]) == len(before) and not s["lastRemoved"])
 
         # -- multi-group batch splitting
         batch = os.path.join(e.tmp, "batch")

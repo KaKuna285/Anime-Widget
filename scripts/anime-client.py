@@ -328,6 +328,15 @@ def cmd_remove(args):
     }))
 
 
+def cmd_remove_series(args):
+    if not args:
+        fail("Usage: remove-series SERIES_KEY [LABEL]")
+
+    print_result(call("POST", "/api/remove-series", {
+        "seriesKey": args[0], "label": args[1] if len(args) > 1 else None,
+    }))
+
+
 def cmd_confirm(args):
     if len(args) < 2:
         fail("Usage: confirm-series SERIES_KEY MAL_ID [TITLE]")
@@ -599,6 +608,7 @@ COMMANDS = {
     "done": cmd_done,
     "undo": cmd_undo,
     "remove-episode": cmd_remove,
+    "remove-series": cmd_remove_series,
     "confirm-series": cmd_confirm,
     "skip-series": cmd_skip,
     "remap-series": cmd_remap,
@@ -622,7 +632,7 @@ def usage():
         "  anime-downloaded.sh TORRENT_NAME CONTENT_PATH SAVE_PATH [TAGS]   (qBittorrent hook)\n"
         "  anime-downloaded.sh info | state | flush | migrate [--force] [--no-token]\n"
         "  anime-downloaded.sh done SERIES SEASON EPISODE [KIND] | undo\n"
-        "  anime-downloaded.sh remove-episode SERIES KIND SEASON EPISODE\n"
+        "  anime-downloaded.sh remove-episode SERIES KIND SEASON EPISODE | remove-series KEY [LABEL]\n"
         "  anime-downloaded.sh confirm-series KEY MAL_ID [TITLE] | skip-series KEY | remap-series KEY [QUERY]\n"
         "  anime-downloaded.sh grade-series KEY SCORE | skip-grade KEY\n"
         "  anime-downloaded.sh search-only QUERY | mal-list STATUS | mal-season [popularity|score]"
