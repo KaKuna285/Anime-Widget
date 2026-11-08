@@ -42,6 +42,11 @@
   </section>
 
   <section>
+    <h2>Jellyfin</h2>
+    <p id="jfStatus" class="muted">Loading…</p>
+  </section>
+
+  <section>
     <h2>Phone app</h2>
     <p class="muted">Open <b>/local/anime-widget/index.html</b> on your Home Assistant address (e.g. your Tailscale https name), the same way you open your dashboard. Then choose "Install app" / "Add to home screen".</p>
     <p><a href="app/">Open it here</a></p>
@@ -75,6 +80,11 @@ async function load() {
       $("malStatus").innerHTML = '<span class="bad">Not logged in.</span>';
       $("login").hidden = false;
     }
+    const jf = info.jellyfin || {};
+    $("jfStatus").innerHTML = !jf.enabled
+      ? 'Not set up. Fill in <b>jellyfin_url</b>, <b>jellyfin_api_key</b> and <b>jellyfin_user</b> in the Configuration tab to tick episodes automatically when you finish them in Jellyfin.'
+      : jf.ok ? '<span class="ok">Connected.</span> Episodes you finish in Jellyfin are ticked automatically (' + jf.ticked + ' since the add-on started).'
+      : jf.ok === false ? '<span class="bad">Error:</span> ' + jf.error : 'Connecting…';
     if (info.apiToken) { $("token").textContent = info.apiToken; $("tokenBox").hidden = false; }
   } catch (e) { $("malStatus").textContent = "Error: " + e.message; }
 }

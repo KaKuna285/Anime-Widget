@@ -49,6 +49,11 @@ class FakeMal:
 
 MAL = FakeMal()
 
+# fake Jellyfin: played items the test controls
+JF = {"played": [{"Id": "old1", "Path": "/media/AnimeLibrary/Old/Season 01/Old - S01E01.mkv",
+                  "UserData": {"Played": True, "LastPlayedDate": "2026-01-01T00:00:00Z"}}],
+      "auth_ok": True}
+
 
 class MalHandler(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -76,6 +81,14 @@ class MalHandler(BaseHTTPRequestHandler):
         return self.headers.get("Authorization", "").startswith("Bearer ")
 
     def do_GET(self):
+        if self.path.startswith("/Users") or self.path.startswith("/Items"):
+            if 'Token="jfkey"' not in (self.headers.get("Authorization") or ""):
+                return self._send(401)
+            if self.path.startswith("/Users"):
+                return self._send(200, [{"Name": "admin", "Id": "u0"}, {"Name": "Fredrik", "Id": "u1"}])
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            assert q["userId"] == ["u1"] and q["IsPlayed"] == ["true"]
+            return self._send(200, {"Items": list(JF["played"])})
         MAL.calls.append(("GET", self.path))
         if not self._auth_ok():
             return self._send(401, {"error": "invalid_token"})
@@ -152,7 +165,9 @@ class Env:
         threading.Thread(target=self.mal_server.serve_forever, daemon=True).start()
 
         with open(os.path.join(self.data, "options.json"), "w") as f:
-            json.dump({"api_token": "secret", "mal_client_id": "cid"}, f)
+            json.dump({"api_token": "secret", "mal_client_id": "cid",
+                       "jellyfin_url": f"http://127.0.0.1:{self.mal_port}",
+                       "jellyfin_api_key": "jfkey", "jellyfin_user": "fredrik"}, f)
 
         with open(os.path.join(self.home, ".config", "anime-todo", "server.conf"), "w") as f:
             f.write(f"SERVER_URL={self.url}\nAPI_TOKEN=secret\n")
@@ -163,7 +178,8 @@ class Env:
     def start_server(self):
         env = dict(os.environ, DATA_DIR=self.data, PORT=str(self.port),
                    MAL_API_BASE=f"http://127.0.0.1:{self.mal_port}/v2",
-                   MAL_TOKEN_URL=f"http://127.0.0.1:{self.mal_port}/token")
+                   MAL_TOKEN_URL=f"http://127.0.0.1:{self.mal_port}/token",
+                   JELLYFIN_POLL_SECONDS="0.3")
         self.proc = subprocess.Popen([sys.executable, SERVER], env=env,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
@@ -390,6 +406,36 @@ def main():
         e.run("remove-episode", "Show", "episode", "2", "1")
         waiter.wait(timeout=5)
         check("wait returns promptly after a change", time.time() - t0 < 4)
+
+        # -- Jellyfin: watched there -> ticked here (via the hardlink's library path)
+        check("info shows Jellyfin connected", "Jellyfin:  connected" in e.run("info"))
+        src_dir = os.path.join(anime, "Jelly")
+        lib_dir = os.path.join(e.home, "AnimeLibrary", "Jelly", "Season 01")
+        os.makedirs(src_dir, exist_ok=True)
+        os.makedirs(lib_dir, exist_ok=True)
+        src = os.path.join(src_dir, "[SubsPlease] Jelly - 01 (1080p).mkv")
+        open(src, "w").write("video")
+        os.link(src, os.path.join(lib_dir, "Jelly - S01E01.mkv"))
+        e.run("[SubsPlease] Jelly - 01 (1080p).mkv", src, src_dir, "mal:202")
+        e.run("link-library")
+        ep = next(x for x in e.state()["episodes"] if x["series"] == "Jelly")
+        check("client records the hardlink's library path", ep.get("libraryPath") == "Jelly/Season 01/Jelly - S01E01.mkv",
+              str(ep.get("libraryPath")))
+        time.sleep(1)
+        check("old Jellyfin plays don't tick anything", any(x["series"] == "Jelly" for x in e.state()["episodes"]))
+        watched_before = MAL.lists.get(202, {}).get("num_episodes_watched")
+        JF["played"].insert(0, {"Id": "jelly1", "Path": "/media/AnimeLibrary/Jelly/Season 01/Jelly - S01E01.mkv",
+                                "UserData": {"Played": True, "LastPlayedDate": "2026-11-08T20:00:00Z"}})
+        e.wait_for(lambda s: not any(x["series"] == "Jelly" for x in s["episodes"]), "Jellyfin auto-tick")
+        check("episode played in Jellyfin is ticked automatically (via the normal done path)",
+              e.state()["history"][-1]["series"] == "Jelly" and ("PUT", "/v2/anime/202/my_list_status") in MAL.calls)
+        e.run("undo")
+        time.sleep(1.2)
+        check("undoing an auto-tick doesn't get re-ticked", any(x["series"] == "Jelly" for x in e.state()["episodes"]))
+        JF["played"][0]["UserData"]["LastPlayedDate"] = "2026-11-08T21:00:00Z"
+        e.wait_for(lambda s: not any(x["series"] == "Jelly" for x in s["episodes"]), "re-tick after replay")
+        check("watching it again in Jellyfin ticks it again", True)
+        check("state sent to clients omits Jellyfin bookkeeping", "jellyfinSeen" not in e.state())
 
         # -- offline: cached state + outbox + auto flush
         e.stop_server()

@@ -342,6 +342,36 @@ class Ops:
 
         return {"message": f"Removed {len(removed)} episode(s) of {label or series_key}"}
 
+    def set_library_paths(self, items):
+        """Record where each episode's hardlink sits in the Jellyfin
+        library (path relative to the library root), as found by the
+        PC client. Used to match Jellyfin's played items to the list."""
+        if not isinstance(items, list):
+            raise OpError("items must be a list")
+
+        updated = 0
+
+        with self.store.op_lock:
+            episodes = self.store.get("episodes")
+
+            for raw in items:
+                try:
+                    series, kind = raw["series"], raw.get("kind") or "episode"
+                    season, episode = int(raw["season"]), int(raw["episode"])
+                    rel = str(raw["libraryPath"]).strip()
+                except (KeyError, TypeError, ValueError) as e:
+                    raise OpError(f"Invalid entry {raw!r}: {e}")
+
+                for item in episodes:
+                    if _same_episode(item, series, kind, season, episode) and item.get("libraryPath") != rel:
+                        item["libraryPath"] = rel
+                        updated += 1
+
+            if updated:
+                self.store.commit({"episodes": episodes})
+
+        return {"message": f"Recorded {updated} library path(s).", "updated": updated}
+
     # ---- series mapping -------------------------------------------
 
     def confirm_series(self, series_key, mal_id, title=None):

@@ -1,5 +1,5 @@
 name: Anime-Widget Server
-version: "0.2.1"
+version: "0.3.0"
 slug: anime_widget_server
 description: Shared episode checklist + MyAnimeList sync for the Anime-Widget desktop widget, app and phone.
 url: https://github.com/KaKuna285/Anime-Widget
@@ -25,7 +25,13 @@ options:
   mal_client_id: ""
   api_token: ""
   deploy_web_app: true
+  jellyfin_url: ""
+  jellyfin_api_key: ""
+  jellyfin_user: ""
 schema:
   mal_client_id: str?
   api_token: password?
   deploy_web_app: bool?
+  jellyfin_url: str?
+  jellyfin_api_key: password?
+  jellyfin_user: str?

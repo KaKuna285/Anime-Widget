@@ -52,6 +52,8 @@ LIBRARY_LINK_DEST = os.path.join(HOME, "AnimeLibrary")
 LIBRARY_LINK_LOG = os.path.join(HOME, "scripts", "anime_link.log")
 
 VIDEO_EXTS = (".mkv", ".mp4", ".avi", ".ts", ".webm", ".m4v")
+LIBRARY_SCAN_STAMP = os.path.join(CACHE_DIR, "library-scan.stamp")
+LIBRARY_SCAN_EVERY = 60  # seconds, when called from the widget's refresh
 EMPTY_STATE = {
     "episodes": [], "history": [], "seriesMap": {}, "pendingMatches": {},
     "pendingGrades": {}, "batchWarnings": {}, "lastRemoved": {}, "rev": -1,
@@ -265,8 +267,95 @@ def fetch_state():
         return load_cache(), str(e)
 
 
+# ---- Jellyfin library paths ---------------------------------------
+#
+# Jellyfin sees the hardlinks anime_link.py makes in ~/AnimeLibrary, not
+# the originals in ~/Anime. A hardlink is the same file (same inode), so
+# for each listed episode we look up which library file it is and tell
+# the server its path. The server matches that against what Jellyfin
+# reports as played, to tick episodes watched in Jellyfin automatically.
+
+def fill_library_paths(state, force=False):
+    missing = [
+        e for e in state.get("episodes", [])
+        if not e.get("libraryPath") and e.get("path") and os.path.isfile(e["path"])
+    ]
+
+    if not missing or not os.path.isdir(LIBRARY_LINK_DEST):
+        return 0
+
+    if not force:
+        try:
+            if time.time() - os.path.getmtime(LIBRARY_SCAN_STAMP) < LIBRARY_SCAN_EVERY:
+                return 0
+        except OSError:
+            pass
+
+    os.makedirs(CACHE_DIR, exist_ok=True)
+
+    with open(LIBRARY_SCAN_STAMP, "w"):
+        pass
+
+    by_inode = {}
+
+    for dirpath, _dirs, files in os.walk(LIBRARY_LINK_DEST):
+        for name in files:
+            full = os.path.join(dirpath, name)
+
+            try:
+                st = os.stat(full)
+            except OSError:
+                continue
+
+            by_inode[(st.st_dev, st.st_ino)] = os.path.relpath(full, LIBRARY_LINK_DEST)
+
+    updates = []
+
+    for e in missing:
+        try:
+            st = os.stat(e["path"])
+        except OSError:
+            continue
+
+        rel = by_inode.get((st.st_dev, st.st_ino))
+
+        if rel:
+            updates.append({"series": e["series"], "kind": e.get("kind") or "episode",
+                            "season": e["season"], "episode": e["episode"], "libraryPath": rel})
+
+    if updates:
+        request("POST", "/api/episodes/library-paths", {"items": updates}, timeout=15)
+        log(f"Recorded {len(updates)} Jellyfin library path(s)")
+
+    return len(updates)
+
+
+def cmd_link_library(_args):
+    """Run anime_link.py now, then record the new library paths."""
+    if os.path.isfile(LIBRARY_LINK_SCRIPT):
+        with open(LIBRARY_LINK_LOG, "a") as out:
+            subprocess.run(
+                ["/usr/bin/python3", LIBRARY_LINK_SCRIPT, LIBRARY_LINK_SOURCE, LIBRARY_LINK_DEST, "--prune"],
+                stdout=out, stderr=out, stdin=subprocess.DEVNULL,
+            )
+
+    try:
+        state = request("GET", "/api/state", timeout=10)
+        n = fill_library_paths(state, force=True)
+        print(f"Recorded {n} library path(s).")
+    except (Unreachable, ServerError) as e:
+        print(f"Couldn't record library paths: {e}")
+
+
 def cmd_state(_args):
     state, reason = fetch_state()
+
+    if reason is None:
+        try:
+            fill_library_paths(state)
+        except Exception as e:  # never break the widget over this
+            log(f"Library path scan failed: {e}")
+
     state["offline"] = reason is not None
     state["offlineReason"] = reason or ""
     state["outboxCount"] = outbox_count()
@@ -422,6 +511,12 @@ def cmd_info(_args):
     print(f"Server:    {url} (v{info.get('version')}, rev {info.get('rev')})")
     print(f"MAL:       {'logged in' if mal.get('loggedIn') else 'NOT logged in'}"
           f"{'' if info.get('malClientIdSet') else ' -- client ID not set in add-on config!'}")
+    jf = info.get("jellyfin") or {}
+    if jf.get("enabled"):
+        print(f"Jellyfin:  {'connected' if jf.get('ok') else 'ERROR: ' + (jf.get('error') or 'not checked yet')}"
+              f" ({jf.get('ticked', 0)} auto-ticked since add-on start)")
+    else:
+        print("Jellyfin:  not configured (set jellyfin_url/api_key/user in the add-on)")
     print(f"Outbox:    {outbox_count()} queued download(s)")
 
 
@@ -494,14 +589,12 @@ def within_root(path):
 
 
 def run_library_link():
-    if not os.path.isfile(LIBRARY_LINK_SCRIPT):
-        return
-
-    with open(LIBRARY_LINK_LOG, "a") as out:
-        subprocess.Popen(
-            ["/usr/bin/python3", LIBRARY_LINK_SCRIPT, LIBRARY_LINK_SOURCE, LIBRARY_LINK_DEST, "--prune"],
-            stdout=out, stderr=out, stdin=subprocess.DEVNULL, start_new_session=True,
-        )
+    """In the background: hardlink into ~/AnimeLibrary, then record paths."""
+    subprocess.Popen(
+        [sys.executable, os.path.realpath(__file__), "link-library"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 def cmd_download(args):
@@ -623,6 +716,7 @@ COMMANDS = {
     "info": cmd_info,
     "flush": cmd_flush,
     "migrate": cmd_migrate,
+    "link-library": cmd_link_library,
 }
 
 
@@ -630,7 +724,7 @@ def usage():
     print(
         "Usage:\n"
         "  anime-downloaded.sh TORRENT_NAME CONTENT_PATH SAVE_PATH [TAGS]   (qBittorrent hook)\n"
-        "  anime-downloaded.sh info | state | flush | migrate [--force] [--no-token]\n"
+        "  anime-downloaded.sh info | state | flush | link-library | migrate [--force] [--no-token]\n"
         "  anime-downloaded.sh done SERIES SEASON EPISODE [KIND] | undo\n"
         "  anime-downloaded.sh remove-episode SERIES KIND SEASON EPISODE | remove-series KEY [LABEL]\n"
         "  anime-downloaded.sh confirm-series KEY MAL_ID [TITLE] | skip-series KEY | remap-series KEY [QUERY]\n"

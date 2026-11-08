@@ -23,9 +23,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mal import MalClient, MalError  # noqa: E402
 from ops import OpError, Ops  # noqa: E402
+from jellyfin import JellyfinWatcher  # noqa: E402
 from store import Store  # noqa: E402
 
-VERSION = "0.2.1"
+VERSION = "0.3.0"
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 OPTIONS_FILE = os.environ.get("OPTIONS_FILE", os.path.join(DATA_DIR, "options.json"))
 PORT = int(os.environ.get("PORT", "8099"))
@@ -96,6 +97,11 @@ API_TOKEN = resolve_api_token(OPTIONS)
 STORE = Store(os.path.join(DATA_DIR, "anime.db"))
 MAL = MalClient(DATA_DIR, (OPTIONS.get("mal_client_id") or "").strip(), log)
 OPS = Ops(STORE, MAL, log)
+JELLYFIN = JellyfinWatcher(
+    STORE, OPS, log,
+    OPTIONS.get("jellyfin_url"), OPTIONS.get("jellyfin_api_key"), OPTIONS.get("jellyfin_user"),
+    VERSION,
+)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -228,7 +234,9 @@ def need(body, *names):
 
 
 def r_state(h, body, q):
-    return STORE.snapshot()
+    state = STORE.snapshot()
+    state.pop("jellyfinSeen", None)   # internal bookkeeping
+    return state
 
 
 def r_wait(h, body, q):
@@ -240,7 +248,7 @@ def r_wait(h, body, q):
 
 def r_info(h, body, q):
     info = {"version": VERSION, "rev": STORE.rev, "mal": MAL.token_status(),
-            "malClientIdSet": bool(MAL.client_id)}
+            "malClientIdSet": bool(MAL.client_id), "jellyfin": JELLYFIN.status}
 
     # Only reveal the token to HA ingress (i.e. an HA admin).
     if h._is_ingress():
@@ -265,6 +273,10 @@ def r_undo(h, body, q):
 def r_remove(h, body, q):
     series, season, episode = need(body, "series", "season", "episode")
     return OPS.remove_episode(series, body.get("kind") or "episode", season, episode)
+
+
+def r_library_paths(h, body, q):
+    return OPS.set_library_paths(body.get("items"))
 
 
 def r_remove_series(h, body, q):
@@ -348,6 +360,7 @@ ROUTES = {
     ("POST", "/api/undo"): r_undo,
     ("POST", "/api/remove"): r_remove,
     ("POST", "/api/remove-series"): r_remove_series,
+    ("POST", "/api/episodes/library-paths"): r_library_paths,
     ("POST", "/api/series/confirm"): r_confirm,
     ("POST", "/api/series/skip"): r_skip,
     ("POST", "/api/series/remap"): r_remap,
@@ -443,6 +456,7 @@ def main():
 
     OPS.resume_interrupted_searches()
     deploy_phone_app()
+    JELLYFIN.start()
 
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     server.daemon_threads = True

@@ -417,8 +417,11 @@ function settingsSheet() {
       location.reload();
     });
     api.get("/api/info").then((info) => {
+      const jf = info.jellyfin || {};
+      const jfText = !jf.enabled ? "not set up" : jf.ok ? "watching for finished episodes" : jf.ok === false ? `error: ${jf.error}` : "connecting…";
       $("[data-info]", el).innerHTML = `Server <b>v${esc(info.version)}</b> · MyAnimeList <b>${info.mal?.loggedIn ? "logged in" : "not logged in"}</b>` +
-        (info.mal?.loggedIn ? "" : `<br>Log in from the add-on's page in Home Assistant.`);
+        (info.mal?.loggedIn ? "" : `<br>Log in from the add-on's page in Home Assistant.`) +
+        `<br>Jellyfin <b>${esc(jfText)}</b>`;
     }).catch((e) => ($("[data-info]", el).textContent = e.message));
   });
 }

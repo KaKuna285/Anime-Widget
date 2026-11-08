@@ -31,6 +31,19 @@ anywhere your HA address does (e.g. over Tailscale). On a phone, choose
 
 Set `deploy_web_app: false` if you don't want the files written.
 
+## Jellyfin: auto-tick watched episodes
+
+Fill in these options to have episodes ticked automatically when you finish
+them in Jellyfin (on any device):
+
+- `jellyfin_url`: how the add-on reaches Jellyfin, e.g. `http://192.168.1.10:8096`
+- `jellyfin_api_key`: from Jellyfin **Dashboard → API Keys → +**
+- `jellyfin_user`: your Jellyfin user name
+
+Matching uses the library path of each episode's hardlink, which the PC
+client records automatically. Episodes already played before you set this up
+aren't ticked. Undoing an auto-tick sticks until you play that episode again.
+
 ## Network
 
 Port 8099 is the API. It requires the API token, except for requests coming

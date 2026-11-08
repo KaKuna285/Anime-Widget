@@ -21,6 +21,7 @@ DOCS = {
     "pendingGrades": {},   # anime-pending-grades.json
     "batchWarnings": {},   # anime-batch-warnings.json
     "lastRemoved": {},     # anime-last-removed.json
+    "jellyfinSeen": {},    # Jellyfin item id -> last played date already handled
 }
 
 

@@ -1,3 +1,6 @@
+## 0.3.0
+- New: episodes you finish in Jellyfin, on any device, are ticked automatically, which also updates MAL. Set `jellyfin_url`, `jellyfin_api_key` and `jellyfin_user` in the add-on options. Needs the updated PC client (`./install.sh`), which records where each episode's hardlink sits in the Jellyfin library.
+
 ## 0.2.1
 - Fix: the phone page couldn't find the add-on ("didn't report an ingress URL"). The add-on now gets HA's environment, and the page can also look the address up through Home Assistant itself.
 
