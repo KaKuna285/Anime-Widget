@@ -1,5 +1,5 @@
 name: Anime-Widget Server
-version: "0.2.0"
+version: "0.2.1"
 slug: anime_widget_server
 description: Shared episode checklist + MyAnimeList sync for the Anime-Widget desktop widget, app and phone.
 url: https://github.com/KaKuna285/Anime-Widget

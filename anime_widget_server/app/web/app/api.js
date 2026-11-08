@@ -41,11 +41,17 @@ export class AnimeApi {
     stage("Reading add-on info");
     const cfg = await fetch("config.json", { cache: "no-store" }).then((r) => r.json());
     this.slug = cfg.slug;
-    if (!cfg.ingressUrl) throw new Error("The add-on didn't report an ingress URL. Restart the Anime-Widget Server add-on.");
-    this.base = location.origin + cfg.ingressUrl.replace(/\/$/, "");
 
     stage("Logging in to Home Assistant");
     await this.connectWs();
+
+    let ingressUrl = cfg.ingressUrl;
+    if (!ingressUrl || !this.slug) {
+      stage("Looking up the add-on");
+      ({ slug: this.slug, ingressUrl } = await this.findAddon());
+    }
+    this.base = location.origin + ingressUrl.replace(/\/$/, "");
+
     stage("Opening a session to the add-on");
     await this.newSession();
     // HA expires idle ingress sessions; keep ours alive.
@@ -138,6 +144,23 @@ export class AnimeApi {
       });
       this.ws.send(JSON.stringify({ id, ...msg }));
     });
+  }
+
+  // Ask Home Assistant (Supervisor) for the add-on's slug and ingress URL.
+  async findAddon() {
+    let addons;
+    try {
+      const r = await this.wsSend({ type: "supervisor/api", endpoint: "/addons", method: "get" });
+      addons = r.addons || r.data?.addons || [];
+    } catch (e) {
+      throw new Error("Couldn't look up the add-on through Home Assistant (this needs an HA admin user). " + (e?.message || ""));
+    }
+    const addon = addons.find((a) => /(^|_)anime_widget_server$/.test(a.slug));
+    if (!addon) throw new Error("The Anime-Widget Server add-on isn't installed.");
+    const info = await this.wsSend({ type: "supervisor/api", endpoint: `/addons/${addon.slug}/info`, method: "get" });
+    const url = info.ingress_url || info.data?.ingress_url;
+    if (!url) throw new Error("The add-on has no ingress URL. Is it started?");
+    return { slug: addon.slug, ingressUrl: url };
   }
 
   setCookie(session) {

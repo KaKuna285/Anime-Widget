@@ -25,7 +25,7 @@ from mal import MalClient, MalError  # noqa: E402
 from ops import OpError, Ops  # noqa: E402
 from store import Store  # noqa: E402
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 OPTIONS_FILE = os.environ.get("OPTIONS_FILE", os.path.join(DATA_DIR, "options.json"))
 PORT = int(os.environ.get("PORT", "8099"))
@@ -370,7 +370,16 @@ def supervisor_self_info():
     """The add-on's own info (slug, ingress URL) from the Supervisor API."""
     token = os.environ.get("SUPERVISOR_TOKEN")
 
+    # Under the s6 base image the env may only be in s6's store.
     if not token:
+        try:
+            with open("/run/s6/container_environment/SUPERVISOR_TOKEN", "r") as f:
+                token = f.read().strip()
+        except OSError:
+            pass
+
+    if not token:
+        log("No SUPERVISOR_TOKEN available -- the phone page will look up the ingress URL itself.")
         return None
 
     import urllib.request
